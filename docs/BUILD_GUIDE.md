@@ -31,15 +31,16 @@ Current update package after the version increment is `LibreSpotUWP\\LibreSpotUW
 
 The 1.0.6.0 package was installed successfully on the Lumia through Windows Device Portal. The app reported version `1.0.6.0`, retained the existing authenticated session and user data, and launched normally. Discovery remained disabled in that baseline package.
 
-The next discovery MVP package is version `1.0.7.0` and adds a default-off local discovery setting.
+The next discovery MVP package was version `1.0.7.0` and added a default-off local discovery setting.
 
-The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `169.254.63.27:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. Do not package or install it until the ARM build succeeds and the endpoint is reachable from Ubuntu.
+The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `169.254.63.27:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. The corrected package is `1.0.8.0` and contains native commits `3195733` and `08f192c`.
 
 Discovery MVP package (built locally, not yet physically validated):
 
-- Path: `LibreSpotUWP\\LibreSpotUWP\\AppPackages\\LibreSpotUWP_1.0.7.0_ARM_Test\\LibreSpotUWP_1.0.7.0_ARM.appx`
+- Path: `LibreSpotUWP\\LibreSpotUWP\\AppPackages\\LibreSpotUWP_1.0.8.0_ARM_Test\\LibreSpotUWP_1.0.8.0_ARM.appx`
 - Architecture: ARM32
-- SHA-256: `2F4F403CA705CEC03B134C68B19BAA4720F1762C2A55B9EED873C81C2FAA2CE2`
+- SHA-256: `C10C910910341E18F55EF8E87C598D755F76415C8F13AB3064B8BF3AC1840F23`
+- Native DLL SHA-256: `700D10ED8C575E427BD401B14AA8E5AB21C4B21C635969583426CAD1FF37572E`
 - Local package contents include `AppxManifest.xml`, `librespot.dll`, and `AppxBlockMap.xml`.
 
 ## Required Windows host toolchain
@@ -60,6 +61,21 @@ cargo +nightly build -Z "build-std=std,panic_abort" --target thumbv7a-uwp-window
 ```
 
 `with-libmdns` is required for the discovery MVP. The README's previous command omitted it while also using `--no-default-features`, producing a DLL with no discovery backend. Copy only the resulting ARM32 release `librespot.dll` into `LibreSpotUWP/LibreSpotUWP/` for the local package build. Record its Rust commit, SHA-256, Cargo.lock hash, target triple, and command in build artifacts; do not commit a DLL unless project policy explicitly adopts reproducible binary artifacts.
+
+## ARM32 dependency and linker preflight
+
+The ARM32 build has two independent requirements that must be applied together:
+
+1. Cargo's generated `windows-sys` 0.60.2/0.61.2 bindings omit ARM32 definitions used by this dependency graph. Use `../.cargo/uwp-windows-sys-patch.toml` via Cargo's `--config` option. Without it Cargo uses the registry copies and fails with missing `WSADATA`, `SERVENT`, `MEMORY_BASIC_INFORMATION`, and `DELAYLOAD_INFO`.
+2. SDK 10.0.19041.0 contains the required ARM `mincore.lib`, but the linker may not inherit the `LIB` value set by `deps.ps1`. Set `LIB` and linker `/LIBPATH` values explicitly; short paths avoid spaces in `RUSTFLAGS`.
+
+```powershell
+$env:LIB = 'C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\um\arm;C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\ucrt\arm;' + $env:LIB
+$env:RUSTFLAGS = '--cfg windows_raw_dylib -C link-arg=/LIBPATH:C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\um\arm -C link-arg=/LIBPATH:C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\ucrt\arm'
+& "$env:USERPROFILE\.cargo\bin\rustup.exe" run nightly cargo build --config "C:/Users/pablo/OneDrive/Documentos/spotifyConnect/.cargo/uwp-windows-sys-patch.toml" -Z build-std=std,panic_abort --target thumbv7a-uwp-windows-msvc --release --no-default-features --features "native-tls uwp-backend with-libmdns"
+```
+
+Do not omit `--config` or the ARM linker paths. The earlier failed attempt omitted the local Cargo patch, then exposed the separate `mincore.lib` search-path failure.
 
 ## UWP build and package
 
