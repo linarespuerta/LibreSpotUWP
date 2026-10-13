@@ -1742,7 +1742,7 @@ namespace LibreSpotUWP.Services
                 device_type = AllocUtf8String(deviceType),
                 cache_dir = AllocUtf8String(cacheDir),
                 persisted_cache_dir = AllocUtf8String(persistedCacheDir),
-                enable_discovery = false,
+                enable_discovery = UserSettings.SpotifyLocalDiscoveryEnabled,
                 enable_volume_normalisation = false,
                 bitrate = Bitrate.B320,
                 format = _audioFormat.LibrespotFormat,

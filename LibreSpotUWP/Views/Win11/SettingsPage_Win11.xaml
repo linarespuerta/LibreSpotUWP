@@ -189,6 +189,15 @@
                             x:Name="OfflineModeToggle"
                             Header="Offline Mode"
                             Toggled="OfflineModeToggle_Toggled" />
+                        <ToggleSwitch
+                            x:Name="LocalDiscoveryToggle"
+                            Header="Advertise as a Spotify Connect device"
+                            Toggled="LocalDiscoveryToggle_Toggled" />
+                        <TextBlock
+                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="Enables local-network discovery for other Spotify clients. Disabled by default; restart the app after changing this setting."
+                            TextWrapping="WrapWholeWords" />
                         <TextBlock
                             Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"

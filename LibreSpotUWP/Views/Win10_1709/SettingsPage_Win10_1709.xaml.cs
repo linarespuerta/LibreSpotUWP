@@ -44,6 +44,7 @@ namespace LibreSpotUWP.Views.Win10_1709
             SpotifyCustomClientIdTextBox.Text = UserSettings.SpotifyCustomClientId;
             SyncAppearanceRadioSelection();
             OfflineModeToggle.IsOn = ConnectivityHelper.IsManualOfflineModeEnabled();
+            LocalDiscoveryToggle.IsOn = UserSettings.SpotifyLocalDiscoveryEnabled;
             PlayDownloadedDuringConnectionLossToggle.IsOn = UserSettings.PlayDownloadedSongsDuringConnectionLoss;
             RandomOfflineFallbackToggle.IsOn = UserSettings.PlayRandomOfflineSongWhenUnavailable;
             UpdateRandomOfflineFallbackVisibility();
@@ -111,6 +112,15 @@ namespace LibreSpotUWP.Views.Win10_1709
             ConnectivityHelper.SetManualOfflineModeEnabled(OfflineModeToggle.IsOn);
             if (App.Librespot != null)
                 UpdateLibrespotStatus(App.Librespot.Session);
+        }
+
+        private void LocalDiscoveryToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            UserSettings.SpotifyLocalDiscoveryEnabled = LocalDiscoveryToggle.IsOn;
+            LogService.Info($"[Settings] Local Spotify Connect discovery {(LocalDiscoveryToggle.IsOn ? "enabled" : "disabled")}. Restart the app to apply the native listener setting.");
         }
 
         private void PlayDownloadedDuringConnectionLossToggle_Toggled(object sender, RoutedEventArgs e)
