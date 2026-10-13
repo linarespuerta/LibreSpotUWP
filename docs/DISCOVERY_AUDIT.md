@@ -104,3 +104,11 @@ and switches the player to that session before every new credential attempt.
 The app UI/Web account remains unchanged; only the native Connect playback
 session changes transiently. This preserves the Spotify Connect model while
 avoiding persistence of another user's credentials as the app account.
+
+## Physical validation (2026-10-13)
+
+Package `1.0.13.0` was installed on the Lumia and tested with two Premium
+accounts. The signed-in app account remained active, while a second Spotify
+account successfully discovered the receiver, completed the transfer, and
+started playback. This confirms the fresh-session fix for cross-account
+Spotify Connect transfers.
