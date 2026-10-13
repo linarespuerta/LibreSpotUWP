@@ -274,6 +274,7 @@ internal static class Program
                rustConfig.Contains("Authenticating via playback bootstrap token") &&
                rustRunner.Contains("PlaybackAuthorizationRejected") &&
                rustRunner.Contains("PlaybackAccountUnsupported") &&
+               rustRunner.Contains("Always create a fresh Session before authenticating the latest credentials") &&
                rustRunner.Contains("last_creds = None") &&
                login5.Contains("Error::unauthenticated(err)") &&
                !rustSession.Contains("process::exit") &&

@@ -89,3 +89,18 @@ instead of treating the account mismatch as a fatal authorization error.
 `getInfo`/mDNS visibility is not proof that cross-account playback is
 authorized; verify the transfer reaches `SessionConnected` and
 `PlaybackResumed`.
+
+## Cross-account reconnect invariant (2026-10-13)
+
+Spotify's ZeroConf contract requires the receiver to accept the selected
+controller's `userName` and encrypted blob, then authenticate that user before
+returning success. The native `Session` is single-use: its AP connection sender
+is initialized through `OnceLock`, so it cannot be reused for a second account
+after the previous `Spirc` is shut down. Reusing it caused the Lumia to remain
+in `Connecting` for every controller account except the first one.
+
+The runner now creates a fresh `Session`, reattaches the audio-key callbacks,
+and switches the player to that session before every new credential attempt.
+The app UI/Web account remains unchanged; only the native Connect playback
+session changes transiently. This preserves the Spotify Connect model while
+avoiding persistence of another user's credentials as the app account.
