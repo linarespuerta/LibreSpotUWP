@@ -33,11 +33,13 @@ The 1.0.6.0 package was installed successfully on the Lumia through Windows Devi
 
 The next discovery MVP package was version `1.0.7.0` and added a default-off local discovery setting.
 
-The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `169.254.63.27:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. The corrected package is `1.0.8.0` and contains native commits `3195733` and `08f192c`.
+The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `169.254.63.27:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. Package `1.0.8.0` contains native commits `3195733` and `08f192c`.
+
+Package `1.0.9.0` adds the standard UWP `internetClientServer` capability alongside `privateNetworkClientServer`. This is a managed-package-only fix for LAN clients that can see mDNS but cannot open the advertised Connect TCP port; the native DLL is not rebuilt. Verify the advertised port with `avahi-browse -rt _spotify-connect._tcp`, then test it from the LAN with `nc -vz -w 3 <lumia-ip> <port>`.
 
 Discovery MVP package (built locally, not yet physically validated):
 
-- Path: `LibreSpotUWP\\LibreSpotUWP\\AppPackages\\LibreSpotUWP_1.0.8.0_ARM_Test\\LibreSpotUWP_1.0.8.0_ARM.appx`
+- Path: `LibreSpotUWP\\LibreSpotUWP\\AppPackages\\LibreSpotUWP_1.0.9.0_ARM_Test\\LibreSpotUWP_1.0.9.0_ARM.appx`
 - Architecture: ARM32
 - SHA-256: `C10C910910341E18F55EF8E87C598D755F76415C8F13AB3064B8BF3AC1840F23`
 - Native DLL SHA-256: `700D10ED8C575E427BD401B14AA8E5AB21C4B21C635969583426CAD1FF37572E`

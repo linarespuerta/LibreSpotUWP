@@ -19,7 +19,7 @@ The managed configuration explicitly disables discovery:
     enable_discovery = UserSettings.SpotifyLocalDiscoveryEnabled,
 ```
 
-The same struct exposes this field in `Interop/LibreSpot.cs`, so it reaches the native ABI. Separately, `Package.appxmanifest` declares `internetClient`, background media playback, and webcam, but no `privateNetworkClientServer`. Therefore the checked-out application deliberately does not request the native discovery path and does not declare the normal UWP LAN server capability required for an advertised endpoint to accept LAN clients.
+The same struct exposes this field in `Interop/LibreSpot.cs`, so it reaches the native ABI. The package now declares `privateNetworkClientServer` and `internetClientServer`; the latter is required when the Lumia's active network profile prevents inbound Connect traffic under the private-network capability alone.
 
 This explains the observed absence of `_spotify-connect._tcp` records and the absence of an open Connect listener. It does **not** prove that merely setting the Boolean to `true` will work on Windows 10 Mobile.
 

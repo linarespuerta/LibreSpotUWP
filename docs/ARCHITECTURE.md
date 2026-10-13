@@ -23,7 +23,7 @@ The package manifest targets `Windows.Universal`, declares 15063 as its manifest
 
 ## Discovery boundary
 
-Spotify Connect discovery requires all of the following: native Zeroconf advertisement, a reachable local HTTP endpoint implementing the Connect handshake, compatible device authentication, a suitable UWP LAN capability, and a physical-device network test. The managed host currently disables the native discovery path and the manifest lacks `privateNetworkClientServer`; see `DISCOVERY_AUDIT.md`.
+Spotify Connect discovery requires all of the following: native Zeroconf advertisement, a reachable local HTTP endpoint implementing the Connect handshake, compatible device authentication, suitable UWP LAN capabilities, and a physical-device network test. The manifest now requests both `privateNetworkClientServer` and `internetClientServer`; see `DISCOVERY_AUDIT.md`.
 
 ## Design direction
 
