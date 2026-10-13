@@ -423,7 +423,7 @@ namespace LibreSpotUWP.Controls
             {
                 Format = LoginPackage.CurrentFormat,
                 Version = LoginPackage.CurrentVersion,
-                MinimumAppVersion = "1.0.11.0",
+                MinimumAppVersion = "1.0.12.0",
                 AccountId = _user?.Id ?? App.SpotifyPlaybackAuth.Current?.AccountId,
                 Web = _auth.Current,
                 Playback = playback
