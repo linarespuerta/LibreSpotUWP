@@ -71,3 +71,20 @@ The source review resolves the implementation questions above. Remaining validat
 ## Required physical validation
 
 From a LAN Linux host run `avahi-browse -rt _spotify-connect._tcp`, inspect TXT records, and connect to the advertised endpoint. Verify discovery and transfer from a second Premium Family account, then regression-test the already-authenticated account. Capture no tokens in logs. Failure modes to distinguish are: no advertisement, advertisement without TCP reachability, invalid HTTP handshake, cross-account authentication rejection, and audio/session failure after transfer.
+
+## Account scope and playback path (2026-10-13)
+
+LAN discovery is only an advertisement. The Spotify client completes the
+`POST?action=addUser` Zeroconf handshake, which sends that controller's
+credentials to the receiver. The native runner then creates a Spotify session
+for those credentials, receives the Connect `transfer` command through Dealer,
+resolves the transferred track, requests its per-track audio key, and only then
+starts the local audio backend.
+
+The native runner rejects non-Premium sessions after authentication
+(`account_type != "premium"`). Therefore a second account may see `Marantz
+Sala` in mDNS while remaining stuck at `Connecting` if it is not Premium.
+Validate the account plan first; if it is Premium, capture the Lumia log around
+`SessionConnected`, `PlaybackAuthorizationRejected`, `PlaybackKeyUnavailable`,
+and `PlaybackResumed` before changing the package again. `getInfo`/mDNS
+visibility is not proof that cross-account playback is authorized.
