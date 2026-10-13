@@ -37,6 +37,8 @@ The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised
 
 Package `1.0.9.0` adds the standard UWP `internetClientServer` capability alongside `privateNetworkClientServer`. This is a managed-package-only fix for LAN clients that can see mDNS but cannot open the advertised Connect TCP port; the native DLL is not rebuilt. Verify the advertised port with `avahi-browse -rt _spotify-connect._tcp`, then test it from the LAN with `nc -vz -w 3 <lumia-ip> <port>`.
 
+Validated on the Lumia (`192.168.10.28`): TCP connection succeeds and `GET /?action=getInfo` returns HTTP 200 with `status: 101`, `statusString: "OK"`, and `remoteName: "Marantz Sala"`. A second Spotify Premium account also discovers the device. If the app is suspended or closed, its dynamic mDNS/TCP endpoint disappears; keep LibreSpot running (screen on for this current UWP lifecycle) while testing Connect.
+
 Discovery MVP package (built locally, not yet physically validated):
 
 - Path: `LibreSpotUWP\\LibreSpotUWP\\AppPackages\\LibreSpotUWP_1.0.9.0_ARM_Test\\LibreSpotUWP_1.0.9.0_ARM.appx`
