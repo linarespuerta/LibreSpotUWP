@@ -99,6 +99,11 @@ Only run that command after placing a DLL built from the pinned native revision 
 
 ## Spotify Connect background keep-alive
 
+On Windows Mobile the receiver is deliberately advertised as `Speaker`, even though the
+underlying OS family is a phone. `Smartphone` is a Spotify controller/client identity;
+advertising it made Connect mirror the source playback position while transfers remained
+stuck in `Connecting`. Validate this in `/?action=getInfo`: `deviceType` must be `Speaker`.
+
 When `SpotifyLocalDiscoveryEnabled` is enabled, the app requests UWP extended execution while it is foregrounded. This request is deliberately independent of an active Spotify playback session: the Connect mDNS advertisement and HTTP control endpoint must remain available when playback is idle and the app is suspended. The request is renewed at launch, on suspension, and when a Connect session becomes idle. Windows may revoke extended execution under battery, policy, or resource pressure; logs then report `Extended execution session revoked`, and the Lumia must be brought to the foreground to advertise again. This is a platform constraint, not a librespot listener failure.
 
 ## CI recommendation

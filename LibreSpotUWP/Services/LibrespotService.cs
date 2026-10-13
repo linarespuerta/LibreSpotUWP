@@ -1722,7 +1722,10 @@ namespace LibreSpotUWP.Services
                     deviceType = "computer";
                     break;
                 case "Windows.Mobile":
-                    deviceType = "smartphone";
+                    // Mobile is acting as a Connect receiver, not a controller.
+                    // Smartphone identity makes Spotify mirror the source device
+                    // while transfers remain stuck in "Connecting".
+                    deviceType = "speaker";
                     break;
                 case "Windows.Xbox":
                     deviceType = "gameconsole";
