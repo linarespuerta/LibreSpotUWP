@@ -33,6 +33,8 @@ The 1.0.6.0 package was installed successfully on the Lumia through Windows Devi
 
 The next discovery MVP package is version `1.0.7.0` and adds a default-off local discovery setting.
 
+The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `169.254.63.27:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. Do not package or install it until the ARM build succeeds and the endpoint is reachable from Ubuntu.
+
 Discovery MVP package (built locally, not yet physically validated):
 
 - Path: `LibreSpotUWP\\LibreSpotUWP\\AppPackages\\LibreSpotUWP_1.0.7.0_ARM_Test\\LibreSpotUWP_1.0.7.0_ARM.appx`

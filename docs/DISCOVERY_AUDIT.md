@@ -4,6 +4,12 @@
 
 The 1.0.7.0 discovery MVP now exposes a persisted `SpotifyLocalDiscoveryEnabled` setting, disabled by default, on all settings-page variants. `LibrespotService.BuildConfig` passes that value to the native `enable_discovery` field. The UI warns that a restart is required because the native listener is created during service startup. The 1.0.6.0 package was physically installed and regression-tested on the Lumia before this change; discovery itself still requires the next ARM package and LAN validation.
 
+## Lumia LAN diagnosis (2026-10-12)
+
+With 1.0.7.0 enabled, Ubuntu observed the Lumia as `Marantz Sala` with a valid `_spotify-connect._tcp` record, but mDNS resolved it to `169.254.63.27:50007`. Neither that address nor the Device Portal address `192.168.10.28` accepted the HTTP `getInfo` request, so the advertisement was not yet reachable by a LAN client. This is not a successful discovery acceptance test: mDNS publication works, while the advertised address/listener path remains unresolved.
+
+Native commit `3195733` now selects the routable address chosen by a UDP route probe before registering the libmdns A record, logs the selected address, and preserves discovery startup errors instead of discarding them. It passes host `cargo check -p librespot-discovery --features with-libmdns`; an ARM package is pending because the current ARM build is blocked in `windows-sys` by missing generated WinSock/Windows type definitions.
+
 ## Confirmed root cause
 
 The managed configuration explicitly disables discovery:
