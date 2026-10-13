@@ -120,6 +120,10 @@ namespace LibreSpotUWP.Views.Win11
                 return;
 
             UserSettings.SpotifyLocalDiscoveryEnabled = LocalDiscoveryToggle.IsOn;
+            if (LocalDiscoveryToggle.IsOn)
+                _ = App.UpdateDiscoveryKeepAliveAsync();
+            else
+                App.BackgroundExecution?.StopKeepAlive();
             LogService.Info($"[Settings] Local Spotify Connect discovery {(LocalDiscoveryToggle.IsOn ? "enabled" : "disabled")}. Restart the app to apply the native listener setting.");
         }
 

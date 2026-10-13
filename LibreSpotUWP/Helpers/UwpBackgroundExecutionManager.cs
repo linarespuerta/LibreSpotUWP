@@ -26,7 +26,6 @@ namespace LibreSpotUWP.Helpers
 
             var accessStatus = await BackgroundExecutionManager.RequestAccessAsync();
 
-#if UWP1709
             if (accessStatus == BackgroundAccessStatus.AlwaysAllowed ||
                 accessStatus == BackgroundAccessStatus.AllowedSubjectToSystemPolicy ||
                 accessStatus == BackgroundAccessStatus.AllowedMayUseActiveRealTimeConnectivity ||
@@ -34,13 +33,6 @@ namespace LibreSpotUWP.Helpers
             {
                 return await StartExtendedSessionAsync();
             }
-#else
-            if (accessStatus == BackgroundAccessStatus.AllowedMayUseActiveRealTimeConnectivity ||
-                accessStatus == BackgroundAccessStatus.AllowedWithAlwaysOnRealTimeConnectivity)
-            {
-                return await StartExtendedSessionAsync();
-            }
-#endif
 
             LogService.Warn($"Background access denied: {accessStatus}");
             return false;

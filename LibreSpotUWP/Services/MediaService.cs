@@ -3206,7 +3206,17 @@ namespace LibreSpotUWP.Services
                         break;
 
                     case false:
-                        App.BackgroundExecution.StopKeepAlive();
+                        if (UserSettings.SpotifyLocalDiscoveryEnabled &&
+                            (_librespot as LibrespotService)?.HasInstance == true)
+                        {
+                            // Discovery must remain visible even when the
+                            // Spotify playback session is idle or disconnected.
+                            await App.UpdateDiscoveryKeepAliveAsync();
+                        }
+                        else
+                        {
+                            App.BackgroundExecution.StopKeepAlive();
+                        }
                         break;
                 }
             }

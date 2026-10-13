@@ -355,8 +355,30 @@ namespace LibreSpotUWP
             LiveTiles = new LiveTileService(Media, SpotifyAuth, SpotifyWeb);
             await LiveTiles.InitializeAsync(isSignedIn);
 
+            // Request this while the app is still foregrounded. The native
+            // listener may be idle, but must remain discoverable after the
+            // window is suspended.
+            await UpdateDiscoveryKeepAliveAsync();
+
             _servicesInitialized = true;
             return isSignedIn;
+        }
+
+        /// <summary>
+        /// Keeps the native Spotify Connect listener alive when the app is
+        /// suspended. This is intentionally tied to the discovery preference,
+        /// not to an active Spotify playback session.
+        /// </summary>
+        public static async Task UpdateDiscoveryKeepAliveAsync()
+        {
+            if (BackgroundExecution == null || !UserSettings.SpotifyLocalDiscoveryEnabled)
+                return;
+
+            if ((Librespot as LibrespotService)?.HasInstance != true)
+                return;
+
+            var allowed = await BackgroundExecution.RequestKeepAliveAsync();
+            LogService.Info($"[App.UpdateDiscoveryKeepAliveAsync] Spotify Connect discovery keep-alive {(allowed ? "enabled" : "unavailable")}." );
         }
 
         private async void OnSpotifyWebAuthStateChanged(object sender, Models.AuthState state)
@@ -509,6 +531,7 @@ namespace LibreSpotUWP
             var deferral = e.SuspendingOperation.GetDeferral();
             try
             {
+                await UpdateDiscoveryKeepAliveAsync();
                 if (Media != null)
                     await Media.PrepareForSuspendingAsync();
                 if (LiveTiles != null)

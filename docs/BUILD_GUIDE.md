@@ -97,6 +97,10 @@ msbuild .\LibreSpotUWP.sln /restore /t:Build /p:Configuration=Release /p:Platfor
 
 Only run that command after placing a DLL built from the pinned native revision at `LibreSpotUWP\librespot.dll` and selecting a development certificate. For daily code changes, use an incremental `Debug|ARM` or `Release|ARM` build and package only when an installable APPX is needed. A successful host build does not validate Windows 10 Mobile deployment or Spotify Connect discovery; those are separate hardware gates.
 
+## Spotify Connect background keep-alive
+
+When `SpotifyLocalDiscoveryEnabled` is enabled, the app requests UWP extended execution while it is foregrounded. This request is deliberately independent of an active Spotify playback session: the Connect mDNS advertisement and HTTP control endpoint must remain available when playback is idle and the app is suspended. The request is renewed at launch, on suspension, and when a Connect session becomes idle. Windows may revoke extended execution under battery, policy, or resource pressure; logs then report `Extended execution session revoked`, and the Lumia must be brought to the foreground to advertise again. This is a platform constraint, not a librespot listener failure.
+
 ## CI recommendation
 
 Use a Windows runner with the required VS/SDK image pinned by version. Cache NuGet/Cargo only by lockfile hash, build ARM Release, emit an unsigned artifact for inspection, and keep signing keys outside source control. Hardware deployment remains a manual gated stage.
