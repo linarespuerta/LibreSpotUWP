@@ -82,9 +82,10 @@ resolves the transferred track, requests its per-track audio key, and only then
 starts the local audio backend.
 
 The native runner rejects non-Premium sessions after authentication
-(`account_type != "premium"`). Therefore a second account may see `Marantz
-Sala` in mDNS while remaining stuck at `Connecting` if it is not Premium.
-Validate the account plan first; if it is Premium, capture the Lumia log around
-`SessionConnected`, `PlaybackAuthorizationRejected`, `PlaybackKeyUnavailable`,
-and `PlaybackResumed` before changing the package again. `getInfo`/mDNS
-visibility is not proof that cross-account playback is authorized.
+(`account_type != "premium"`). A second Premium account is valid, but its
+credentials are a transient Connect session and must not replace the account
+used by the app UI. The managed callback now preserves that external session
+instead of treating the account mismatch as a fatal authorization error.
+`getInfo`/mDNS visibility is not proof that cross-account playback is
+authorized; verify the transfer reaches `SessionConnected` and
+`PlaybackResumed`.

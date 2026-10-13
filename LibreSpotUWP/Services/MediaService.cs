@@ -3377,6 +3377,20 @@ namespace LibreSpotUWP.Services
             var dispatcher = Window.Current?.Dispatcher;
             try
             {
+                // Zeroconf Connect transfers may authenticate the native receiver
+                // as a different Premium account than the account signed into the
+                // app UI. Those credentials belong to the transient Connect
+                // session; persisting them as the app account would quarantine
+                // the session and disconnect the transfer.
+                var appAccountId = _playbackAuth.Current?.AccountId;
+                if (!string.IsNullOrWhiteSpace(appAccountId) &&
+                    !string.IsNullOrWhiteSpace(args?.SessionUser) &&
+                    !string.Equals(appAccountId, args.SessionUser, StringComparison.OrdinalIgnoreCase))
+                {
+                    LogService.Info("[MediaService.OnPlaybackCredentialsAvailable] Keeping external Spotify Connect credentials transient; app and controller accounts differ.");
+                    return;
+                }
+
                 await _playbackAuth
                     .SaveReusableCredentialsAsync(args.CredentialsJson, args.SessionUser)
                     .ConfigureAwait(false);
