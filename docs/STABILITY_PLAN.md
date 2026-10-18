@@ -6,7 +6,7 @@ Date: 2026-10-18. Status: implementation underway. The checkpoint at the end rec
 
 Cover all of Goal 5 in `../../prompt.md`: network recovery, Spotify session recovery, background audio, authentication preservation, restart behavior, CPU/memory efficiency, battery/thermal behavior, actionable errors, safe diagnostics, and optional appliance operation. Audio-format optimization, UI redesign, and Home Assistant remain separate goals.
 
-Baseline: Lumia ARM32 package 1.0.13.0. Two-account discovery, transfer, and playback were physically confirmed; see [DISCOVERY_AUDIT.md](DISCOVERY_AUDIT.md). This does not establish long-running stability. The user reports intermittent interruption after locking the phone. No correlated lock-time device log was collected during this planning session; the exact cause remains unconfirmed.
+Baseline: Lumia ARM32 package 1.0.14.0 (built from the stability implementation). Two-account discovery, transfer, and playback were physically confirmed; see [DISCOVERY_AUDIT.md](DISCOVERY_AUDIT.md). This does not establish long-running stability. The user reports that the first screen lock pauses playback, after which pressing Play from the lock screen makes later locks work normally. The user also reports that the device is not discoverable while locked, even when LibreSpotUWP was open before locking. No correlated lock-time device log was collected during this planning session; both causes remain hypotheses until the device trace is captured.
 
 Preserve the known-good APPX and data before each installation. Preserve package identity, authentication boundaries, and the native fresh-Session account-switch fix. Use small Conventional Commits and independently testable milestones. Do not deploy anything to the homelab for this work.
 
@@ -21,6 +21,8 @@ Paths below are relative to the app repository unless prefixed with `../librespo
 | Platform media source | `CreateSilentMediaSource` supplies local silent samples, declares 24 hours, and does not report the remote stream's buffered range | Test network reservation and long-duration behavior. Investigate supported integration before changing buffering semantics; do not fabricate buffering information. |
 | Extended execution | `Helpers/UwpBackgroundExecutionManager.cs` requests `ExtendedExecutionReason.Unspecified`; `Session_Revoked` only logs and sets a flag | This is revocable and is not a Mobile screen-off guarantee. Access requests/session disposal are not serialized; exception cleanup can leave `_session` assigned. Add explicit ownership and state tests. |
 | Lifecycle | `App.xaml.cs: OnSuspending/OnResuming`; `MediaService: PrepareForSuspendingAsync/ResumeAfterSuspendingAsync` preserve active local audio through `BackgroundPlaybackPolicy` | Existing policy is useful. Setting `_suspended = 0` does not prevent OS suspension. Resume may return early after active playback and does not perform an end-to-end health reconciliation. |
+| First lock pause | `MediaService` starts the silent `MediaPlayer` and requests extended execution from asynchronous session/discovery callbacks; `OnSuspending` can call `_mediaPlayer.Play()` only after the OS has begun the background transition | A first-lock race can leave the SMTC/background-media session unarmed. The observed recovery after pressing lock-screen Play is consistent with the first SMTC command completing that activation. Capture lifecycle, `MediaPlayer` state, SMTC status, and extended-execution result before changing transport behavior. |
+| Locked discoverability | Discovery keep-alive uses `ExtendedExecutionSession` and the native Spotify Connect listener; `Package.appxmanifest` has `backgroundMediaPlayback`, but no socket-broker/background-task handoff | Background audio capability does not by itself guarantee an idle mDNS listener in Connected Standby. Determine whether active playback keeps the process/listener alive; if not, evaluate a supported socket/background-task design or explicitly document that idle discovery requires the screen on. Never claim that a longer timeout or a second listener fixes this without device evidence. |
 | Suspend work | `OnSuspending` awaits discovery keep-alive before media preparation and live tiles, under one try block | A denied/failed/slow auxiliary operation can delay or skip essential preparation. Use the actual suspension deadline and independent bounded cleanup. |
 | Timers | `MediaService` position, volume debounce, and Connect polling use DispatcherTimer; AudioGraph transition/producer monitoring uses `System.Threading.Timer` | Identify which timer drives correctness. Transport recovery and queue progress must not require UI ticks; thread timers also cannot run after OS suspension. |
 | Producer watchdog | `LibrespotRingBufferPlayer.CheckProducerHealth`, `ProducerHealthMonitor`, `RecoverProducerAsync` already detect stalls and limit attempts to three | Reuse these mechanisms. A healthy/full producer with a stopped renderer is a different fault and can escape the low-buffer producer check. |
@@ -41,6 +43,7 @@ Primary Microsoft references checked on 2026-10-18:
 - [Background audio requirements](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/background-audio): background playback requires capability, appropriate SMTC integration, and compliance with background memory limits. AudioGraph needs explicit SMTC integration. Streaming through MediaStreamSource has specific network/buffering semantics.
 - [Extended execution](https://learn.microsoft.com/en-us/windows/uwp/launch-resume/run-minimized-with-extended-execution): execution can be revoked; only one session request can be active; test without a debugger. Specifically on Windows 10 Mobile, Unspecified execution lasts while the screen is on and stops at Connected Standby. Desktop power/time behavior must not be applied to the Lumia.
 - [Microsoft background playback sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/backgroundmediaplayback/): evaluate the supported single-process media model and background networking requirements against the installed Mobile build.
+- [Network communications in the background](https://learn.microsoft.com/en-us/windows/uwp/networking/network-communications-in-the-background): Connected Standby may require a background task with `IsNetworkRequested`, or socket-broker ownership via `SocketActivityTrigger`/`ControlChannelTrigger`; this is distinct from merely requesting extended execution.
 
 These facts establish platform constraints, not the cause of this particular interruption. Prefer supported background media execution. Do not promise an always-reachable idle receiver when the OS suspends the app. Do not add fake audio, unrestricted capabilities, or a replacement architecture without evidence that the existing media path cannot meet acceptance.
 
@@ -75,11 +78,11 @@ Risks: logging changes timing or exposes secrets. Rollback: disable added teleme
 
 Objective: continuous audible playback under the Lumia's supported background media model.
 
-Changes: audit SMTC ownership/command handling, silent MediaPlayer and audible renderer state together; add EnteredBackground/LeavingBackground handling with low-cost state recording and memory release. Serialize extended-execution requests and make revoke/dispose/error paths idempotent, with unsubscribe/cleanup on all paths. Reconcile current health on foreground return even if app-level `_suspended` was never set. Keep suspension work deadline-bounded; media preparation must not depend on live tile or keep-alive success.
+Changes: audit SMTC ownership/command handling, silent MediaPlayer and audible renderer state together; arm the MediaPlayer/SMTC background session when local playback becomes active, not for the first time inside `OnSuspending`; record whether the first lock occurred before extended execution was allowed. Add EnteredBackground/LeavingBackground handling with low-cost state recording and memory release. Serialize extended-execution requests and make revoke/dispose/error paths idempotent, with unsubscribe/cleanup on all paths. Reconcile current health on foreground return even if app-level `_suspended` was never set. Keep suspension work deadline-bounded; media preparation must not depend on live tile or keep-alive success.
 
 Decision gate: use S0 evidence to choose the smallest supported correction to media/SMTC/network lifetime. First validate the existing AudioGraph path against Microsoft's requirements. Only if device evidence proves it necessary, prototype feeding actual decoded PCM through a platform media source as an alternative to the silent-player arrangement. Treat that as a separate renderer change with format, seek, buffering and continuity regression tests; avoid an immediate rewrite or legacy dual-process migration.
 
-Tests: lifecycle policy transitions and permission denied/revoked/racing requests; physical lock/unlock, Home, track boundary, SMTC buttons, owner/guest, battery/charger, debugger detached.
+Tests: lifecycle policy transitions and permission denied/revoked/racing requests; physical lock/unlock immediately after starting playback and again after a confirmed keep-alive; Home, track boundary, SMTC buttons, owner/guest, battery/charger, debugger detached. Verify the first lock does not issue an unintended pause and that lock-screen Play/Pause remains authoritative.
 
 Acceptance: 30 lock/unlock cycles without unintended pause, a two-hour screen-off playlist with track changes, working lock-screen controls, and no recovery triggered by intentional pause. Idle discoverability is tested separately and any OS-imposed limitation is documented.
 
@@ -101,11 +104,11 @@ Dependencies: S0, coordinate with S1. Risks: auth regression or deadlock. Rollba
 
 Objective: recover across Wi-Fi/internet changes while advertising only usable endpoints.
 
-Changes: separate LAN reachability, internet indication, Spotify transport state and discovery readiness. Debounce/coalesce network events; defer retries while offline and re-arm on genuine return. Audit the early return after clearing connectivity backoff to ensure subsequent handling is triggered. Re-evaluate usable interface/address on Wi-Fi changes and recreate advertisement/listener only when needed. Never hardcode IP or the dynamic port. Prevent repeated errors from exhausting recovery while the network is unavailable.
+Changes: separate LAN reachability, internet indication, Spotify transport state and discovery readiness. Debounce/coalesce network events; defer retries while offline and re-arm on genuine return. Audit the early return after clearing connectivity backoff to ensure subsequent handling is triggered. Re-evaluate usable interface/address on Wi-Fi changes and recreate advertisement/listener only when needed. Never hardcode IP or the dynamic port. Prevent repeated errors from exhausting recovery while the network is unavailable. Trace the locked-device case separately: active playback discoverability and idle receiver discoverability are different contracts. Inspect the native listener's socket ownership and determine whether it can be transferred to a supported socket-broker/background-task path with `IsNetworkRequested`; do not assume `ExtendedExecutionReason.Unspecified` survives Connected Standby on Windows 10 Mobile.
 
 Tests: Wi-Fi off/on, internet unavailable while LAN remains up, DNS failure/restoration, repeated network notifications, address change, Spotify endpoint unavailable, connected-but-no-internet. Verify native discovery implementation before selecting rebind/recreate behavior.
 
-Acceptance: after connectivity is confirmed restored, a healthy active session resumes or exposes a specific retry action within a proposed 30-second target; no wrong-account recovery. A current avahi record, TCP connection and getInfo response match the actual endpoint. Idle/screen-off cases record platform limits separately.
+Acceptance: after connectivity is confirmed restored, a healthy active session resumes or exposes a specific retry action within a proposed 30-second target; no wrong-account recovery. A current avahi record, TCP connection and getInfo response match the actual endpoint while the screen is on. For screen-off operation, either maintain a verified discovery record/TCP/getInfo path during active playback and idle periods, or expose/document the Windows Mobile limitation and require the screen to be on for a new Connect transfer. Idle/screen-off cases record platform limits separately.
 
 Dependencies: S2 and usable network evidence. Risks: disconnecting good playback or stale advertisements. Rollback: restore prior network handling and discovery preference.
 
@@ -150,6 +153,7 @@ Dependencies: S1–S5. Risks: resource optimization changes timing; long tests c
 | Scenario | Minimum test | Required evidence |
 | --- | --- | --- |
 | Lock/background | 30 cycles plus two-hour playlist; charger and battery | Audible continuity, lifecycle/permission/media/PCM timeline; no debugger |
+| First lock activation | Start local playback, lock within 1–2 seconds; repeat after keep-alive is logged as allowed | No unintended pause; `MediaPlayer`/SMTC/extended-execution ordering; lock-screen Play/Pause result |
 | Family sessions | Owner → guest → owner; guest loss/recovery | Actual audio and controller transfer, ownership generations, no saved guest secret |
 | Wi-Fi recovery | Three short outages and one five-minute outage | Network return, bounded retries, audio or clear action; proposed 30-second recovery target |
 | Internet/DNS | LAN preserved while internet or DNS unavailable | No false LAN failure; valid rediscovery and retry on return |
@@ -157,6 +161,7 @@ Dependencies: S1–S5. Risks: resource optimization changes timing; long tests c
 | Audio path | Track boundaries, seeks, output reconnect | Producer and consumer progress, graph count, underruns and audible result |
 | Restart | Graceful exit, forced termination, offline launch | Login/preferences, snapshot validity, correct ownership and resume policy |
 | Idle receiver | Screen off at 5/15/60 minutes, then Connect attempt | mDNS/TCP/getInfo and controller result; distinguish OS suspension from listener defect |
+| Locked discoverability | With playback active and with playback idle, lock the Lumia and attempt Connect from a second Premium account at 5/15/60 minutes | Avahi record presence, advertised IP/port, TCP/getInfo, controller result, lifecycle/permission state; classify as supported, recoverable, or OS-imposed limitation |
 | Long run | Eight-hour playback plus overnight idle | Resource trend, logs, no crash or unresolved audio stall |
 
 For each run record OS/app/native revisions, APPX/DLL hashes, backend, power/background settings, duration and result. Store only redacted evidence outside Git when it contains private LAN/account/device information. Hardware acceptance is user-assisted unless direct device access is available.
@@ -178,6 +183,36 @@ Goal 5 is complete only when the physical matrix passes, documented platform lim
 ## Implementation checkpoint (2026-10-18)
 
 Review corrections: reconnect retry state now follows the single generation increment made by each instance recreation, including failed attempts. Snapshot writes carry monotonic revisions and discard obsolete workers. Renderer recovery rechecks cancellation and current playback intent after old-renderer disposal and again before issuing Seek. An authoritative connected-session event clears the recovery block; stale and disconnected events do not. Four behavioral regression tests and the full portable suite passed, together with the managed ARM build; physical qualification is still pending.
+
+## New device observations to resolve in the next session (2026-10-18)
+
+### A. First screen lock pauses once
+
+Observed behavior: the first transition to the lock screen pauses playback. Pressing Play from the lock screen restores playback, and subsequent screen-off periods behave normally.
+
+Working hypothesis: the first lock races the asynchronous establishment of the single-process background-media/SMTC session and the `ExtendedExecutionSession`. `OnSuspending` currently reinforces `_mediaPlayer.Play()` after the transition has started, which may be too late to prevent the OS from treating the session as inactive. This is not yet proven to be an explicit Spotify pause or a native producer failure.
+
+Investigation:
+
+1. Add a monotonic launch/playback correlation to the device trace and log `EnteredBackground`, `Suspending`, `MediaPlayer.PlaybackStateChanged`, `SystemMediaTransportControls.PlaybackStatus`, `SessionStateChanged`, and extended-execution request/allow/revoke results.
+2. Compare an immediate lock (within 1–2 seconds of starting playback) with a lock after the keep-alive request has completed successfully.
+3. Confirm whether `_mediaPlayer.Play()` and SMTC status are already `Playing` before the first lock; do not infer this from librespot's playback state alone.
+4. If the race is confirmed, arm the background media session at the local-playback activation boundary, make the first transition idempotent, and keep `OnSuspending` as a bounded reconciliation rather than the first activation point. Add a pure ordering test and repeat the physical first-lock matrix.
+
+### B. Discoverability disappears while locked
+
+Observed behavior: with LibreSpotUWP open, the Lumia is discoverable while unlocked but disappears from Spotify Connect after the screen is locked. Unlocking restores discoverability. This must be tested both while audio is playing and while the receiver is idle.
+
+What the platform evidence says: the `backgroundMediaPlayback` capability is intended to keep active media playback alive and requires SMTC integration; it does not promise an indefinitely running arbitrary network listener. Microsoft documents that network work in Connected Standby may require a background task with `IsNetworkRequested` or socket-broker ownership (`SocketActivityTrigger`/`ControlChannelTrigger`). `ExtendedExecutionReason.Unspecified` is not equivalent to an always-on mDNS service on Windows 10 Mobile.
+
+Implementation decision tree for the next session:
+
+1. First verify whether the native librespot Zeroconf listener remains bound and receives packets while locked during active playback. Record the advertised address/port and compare local TCP/getInfo with the Spotify controller result.
+2. If active playback keeps the process alive but idle discovery does not, define two explicit contracts: “discoverable during active background playback” and “idle receiver.” Do not change audio behavior to preserve idle discovery without evidence.
+3. If idle discovery is a hard requirement, inspect whether the listener can be handed to a supported Windows socket-broker/background-task mechanism on this Lumia build. A task-based design must request network with `IsNetworkRequested`, use the documented trigger/ownership lifecycle, and pass packet handling back safely; it must not create a second unmanaged mDNS listener.
+4. If Windows 10 Mobile cannot support the required multicast listener in Connected Standby, document the limitation in the UI/diagnostics and require the user to unlock/start playback before a new Connect transfer. Do not add a private capability, hardcoded port, or periodic polling workaround.
+
+Acceptance for this investigation is evidence-backed classification, not merely a successful unlocked test: the plan must state whether locked active playback and locked idle discoverability are supported, conditionally supported, or OS-limited, with an artifact hash, OS build, lifecycle trace, Avahi result, TCP/getInfo result, and controller result.
 
 Changes now in the working tree:
 
