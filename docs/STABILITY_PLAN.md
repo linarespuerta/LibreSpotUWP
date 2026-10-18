@@ -1,6 +1,6 @@
 # Goal 5: stability and appliance operation
 
-Date: 2026-10-18. Status: implementation-ready investigation and delivery plan; no runtime changes made by this document.
+Date: 2026-10-18. Status: implementation underway. The checkpoint at the end records delivered code and outstanding acceptance evidence.
 
 ## Scope and baseline
 
@@ -174,3 +174,19 @@ Suggested first implementation slice: `feat(diagnostics): correlate lifecycle an
 ## Definition of done
 
 Goal 5 is complete only when the physical matrix passes, documented platform limitations have explicit behavior, tests/build checks pass, and diagnostics/rollback instructions are usable. A successful compile, a single successful song, or the absence of errors in a desktop run is insufficient. Any untested battery/idle/soak scenario stays explicitly pending.
+
+## Implementation checkpoint (2026-10-18)
+
+Review corrections: reconnect retry state now follows the single generation increment made by each instance recreation, including failed attempts. Snapshot writes carry monotonic revisions and discard obsolete workers. Renderer recovery rechecks cancellation and current playback intent after old-renderer disposal and again before issuing Seek. An authoritative connected-session event clears the recovery block; stale and disconnected events do not. Four behavioral regression tests and the full portable suite passed, together with the managed ARM build; physical qualification is still pending.
+
+Changes now in the working tree:
+
+- S0 groundwork: log entries carry a process-launch correlation ID; background transitions record app memory usage/limit and memory pressure; MediaPlayer state/failure events are logged; the existing bounded logger can export its already-redacted log to `LibreSpotUWP-diagnostics.txt` in app local storage. The export waits at most two seconds for queued entries. The secret redactor is isolated for direct tests.
+- S1: suspension tasks run under one four-second deadline, media preparation runs before optional discovery/tile work, and an individual failure no longer prevents later cleanup. Extended execution requests are serialized; failed, stopped, and revoked sessions are detached and disposed. Foreground return restores the background media sponsor when playback intent still requires it and always reconciles connectivity.
+- S2: automatic producer/network recovery checks the active playback account before using saved owner authorization. Unknown or guest sessions fail closed in producer recovery; known guest sessions are not replaced on network/auth changes. Session-generation checks cancel stale recovery. Guest credentials remain transient. Playback snapshots now record only the owner account identity (no guest ID or credential); legacy, guest, and account-mismatched snapshots do not autoplay. Forced snapshot writes now complete synchronously before suspension/explicit state transitions.
+- S3: network notifications are coalesced for 250 ms, and clearing the connectivity backoff no longer returns before reconciliation.
+- S4: the ring-buffer backend distinguishes a stopped renderer from a stalled producer when PCM is buffered and the consumer read position has not advanced. Renderer recovery recreates only the audio backend and seeks to the saved position; Spotify session recovery remains a separate path.
+- S5: snapshot ownership and owner-only resume are implemented; the existing snapshot schema remains backward-readable, while old snapshots without ownership are intentionally not auto-resumed.
+- S6: memory samples and existing bounded audio/queue diagnostics provide initial soak evidence. Resource budgets and all long-run results still require measurement on the Lumia.
+
+Automated coverage added for owner/guest recovery authorization, snapshot resume ownership, producer-versus-consumer stall classification, lifecycle/recovery wiring, and log secret redaction. The portable playback suite passed; its Login Helper source audit was skipped because that sibling checkout is absent. The managed UWP `Release|ARM` solution build passed without creating an APPX. Windows 10 Mobile lock/unlock, account transfer, Wi-Fi recovery, APPX installation, and soak acceptance remain unverified until exercised on the Lumia. No native Rust change or APPX deployment is part of this code slice. See `TEST_PLAN.md` for exact commands and results.

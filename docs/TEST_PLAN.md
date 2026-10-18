@@ -8,6 +8,20 @@ The local/desktop boundary is documented in [LOCAL_TESTING.md](LOCAL_TESTING.md)
 - Verify C# `LibrespotConfig` layout against the exact Rust FFI definition for ARM32, including Boolean size, enum widths, pointer alignment and callback lifetime.
 - Run existing playback tests and smoke scripts only after dependencies are restored; record commands and outcomes.
 - Inspect APPX contents, manifest capabilities, DLL machine type, signature, and absence of secrets.
+- Stability change coverage: `dotnet run --project tests/LibreSpotUWP.Playback.Tests/LibreSpotUWP.Playback.Tests.csproj` includes guest/owner recovery authorization, snapshot ownership, renderer-stall classification, lifecycle/network wiring, and diagnostic redaction. Record the actual result for this change below; a passing portable test does not replace a UWP ARM build.
+
+## Stability implementation validation (2026-10-18)
+
+Review follow-up: fixed self-invalidating reconnect retries, out-of-order snapshot writes, renderer continuation after Pause/Stop, and recovery remaining blocked after a new Connect session. Added executable regression tests: `FailedReconnectAllowsTheNextOwnedGeneration`, `OldSnapshotCannotOverwriteForcedPause`, `PauseDuringRendererDisposalPreventsContinuation`, and `NewConnectSessionRearmsRecovery`. The full portable suite and managed `Release|ARM` build passed again (exit 0). The Login Helper audit remains skipped because its checkout is absent; Lumia acceptance remains pending.
+
+- `dotnet run --project tests/LibreSpotUWP.Playback.Tests/LibreSpotUWP.Playback.Tests.csproj`: passed all registered portable playback tests, including the new recovery, snapshot ownership, renderer stall, lifecycle and redaction cases. The Login Helper source audit printed `SKIP` because the sibling `LibreSpotUWPLoginHelper` checkout is absent.
+- `MSBuild.exe LibreSpotUWP.sln /t:Build /p:Configuration=Release /p:Platform=ARM /p:AppxPackage=false /p:GenerateAppxPackageOnBuild=false /m /v:quiet`: passed (exit 0); compiles the UWP ARM managed app. No APPX was generated or signed. MSBuild emitted existing XAML/C# warnings, including warnings for legacy background-access enum values retained for compatibility.
+- `git diff --check`: passed after implementation.
+- Both project files parse as XML.
+- APPX package inspection: not run because package generation was disabled.
+- Lumia lock/unlock, multi-account, Wi-Fi, restart, and soak matrix: pending physical-device execution. No hardware result is inferred from local checks.
+
+Diagnostic export entry point: `LogService.ExportRedactedDiagnosticsAsync()` writes `LibreSpotUWP-diagnostics.txt` under app local storage after waiting up to two seconds for queued log entries. It applies the logger's current token/user/path redaction rules; inspect the export before sharing it.
 
 ## Lumia test matrix
 

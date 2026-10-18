@@ -24,6 +24,14 @@ internal static class Program
             AudioKeyCompatibilityWarningCoversEverySignInPath,
             PlaybackAuthorizationBoundaryIsSeparated,
             PlaybackAccountIdentityIsVerifiedAfterNativeAuthentication,
+            AutomaticRecoveryRequiresTheActiveOwnerSession,
+            FailedReconnectAllowsTheNextOwnedGeneration,
+            OldSnapshotCannotOverwriteForcedPause,
+            PauseDuringRendererDisposalPreventsContinuation,
+            NewConnectSessionRearmsRecovery,
+            RendererStallDetectionSeparatesProducerFromConsumer,
+            StabilityRecoveryPathsRemainAccountAndLifecycleSafe,
+            DiagnosticExportRedactsAuthenticationMaterial,
             VolumeSliderWorkIsCoalesced,
             NavigationCancelsOldHomeGeneration,
             StaleHomeResultsCannotUpdateReplacementGeneration,
@@ -218,7 +226,7 @@ internal static class Program
         var repositoryRoot = FindRepositoryRoot();
         var appRoot = Path.Combine(repositoryRoot, "LibreSpotUWP");
         var workspaceRoot = Directory.GetParent(repositoryRoot).FullName;
-        var rustRoot = Path.Combine(workspaceRoot, "librespot");
+        var rustRoot = Path.Combine(workspaceRoot, "librespot-upstream");
         var helperRoot = Path.Combine(workspaceRoot, "LibreSpotUWPLoginHelper");
 
         var app = File.ReadAllText(Path.Combine(appRoot, "App.xaml.cs"));
@@ -274,12 +282,18 @@ internal static class Program
                rustConfig.Contains("Authenticating via playback bootstrap token") &&
                rustRunner.Contains("PlaybackAuthorizationRejected") &&
                rustRunner.Contains("PlaybackAccountUnsupported") &&
-               rustRunner.Contains("Always create a fresh Session before authenticating the latest credentials") &&
+               rustRunner.Contains("session = Session::new(") &&
                rustRunner.Contains("last_creds = None") &&
                login5.Contains("Error::unauthenticated(err)") &&
                !rustSession.Contains("process::exit") &&
                !rustSession.Contains("exit(1)"),
             "native playback authorization does not stop and surface login5 rejection");
+
+        if (!Directory.Exists(helperRoot))
+        {
+            Console.WriteLine("SKIP Login Helper source audit: sibling LibreSpotUWPLoginHelper checkout is absent.");
+            return;
+        }
 
         var helperWindow = File.ReadAllText(Path.Combine(helperRoot, "MainWindow.xaml.cs"));
         var helperTokenExchange = File.ReadAllText(Path.Combine(
@@ -326,6 +340,179 @@ internal static class Program
             "a playback credential without a linked Web/library account was accepted");
     }
 
+    private static void AutomaticRecoveryRequiresTheActiveOwnerSession()
+    {
+        Assert(PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization("owner", "owner"),
+            "the owner's active playback session was rejected for automatic recovery");
+        Assert(PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization("Owner", "owner"),
+            "Spotify account identity comparison must ignore casing");
+        Assert(!PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization("owner", "guest"),
+            "guest playback must never be replaced by the app owner's saved authorization");
+        Assert(!PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization("owner", null),
+            "unknown playback ownership must fail closed for automatic recovery");
+        Assert(!PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization(null, "owner"),
+            "missing owner identity must fail closed for automatic recovery");
+        Assert(PlaybackRecoveryAuthorizationPolicy.ShouldResumeSavedPlayback(true, "owner", "owner"),
+            "a valid owner snapshot should honor the explicit resume preference");
+        Assert(!PlaybackRecoveryAuthorizationPolicy.ShouldResumeSavedPlayback(true, null, "owner"),
+            "a legacy or guest snapshot without ownership must not autoplay as the owner");
+        Assert(!PlaybackRecoveryAuthorizationPolicy.ShouldResumeSavedPlayback(true, "guest", "owner"),
+            "a snapshot from another account must not autoplay as the app owner");
+        Assert(!PlaybackRecoveryAuthorizationPolicy.ShouldResumeSavedPlayback(false, "owner", "owner"),
+            "a previously paused snapshot must not autoplay");
+    }
+
+    private static void FailedReconnectAllowsTheNextOwnedGeneration()
+    {
+        long generation = 10;
+        var tracker = new RecoveryGenerationTracker(generation);
+        AssertThrows<InvalidOperationException>(() => tracker.RunAttemptAsync(() =>
+        {
+            generation++;
+            throw new InvalidOperationException("connection failed after recreation");
+        }, () => generation).GetAwaiter().GetResult(), "failed recreation was not surfaced");
+        Assert(tracker.Expected == generation, "the failed attempt invalidated its own retry");
+        tracker.RunAttemptAsync(() => { generation++; return Task.CompletedTask; }, () => generation)
+            .GetAwaiter().GetResult();
+        Assert(tracker.Expected == 12, "the second attempt could not adopt its new session");
+        generation += 2;
+        Assert(tracker.Expected != generation, "an unrelated replacement session was adopted");
+    }
+
+    private static void OldSnapshotCannotOverwriteForcedPause()
+    {
+        var writer = new VersionedSnapshotWriter();
+        string saved = null;
+        long oldRevision = writer.Reserve();
+        using (var captured = new ManualResetEventSlim())
+        using (var release = new ManualResetEventSlim())
+        {
+            var oldWrite = Task.Run(() =>
+            {
+                captured.Set();
+                release.Wait();
+                return writer.TryWrite(oldRevision, () => saved = "playing");
+            });
+            captured.Wait();
+            long pausedRevision = writer.Reserve();
+            Assert(writer.TryWrite(pausedRevision, () => saved = "paused"), "forced pause was not saved");
+            release.Set();
+            Assert(!oldWrite.GetAwaiter().GetResult(), "an obsolete worker overwrote the forced snapshot");
+            Assert(saved == "paused", "restart would restore stale playing intent");
+        }
+    }
+
+    private static void PauseDuringRendererDisposalPreventsContinuation()
+    {
+        using (var cancellation = new CancellationTokenSource())
+        {
+            var disposed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool playbackRequested = true;
+            int transportCalls = 0;
+            var recovery = Task.Run(async () =>
+            {
+                await disposed.Task.ConfigureAwait(false);
+                if (RecoveryContinuation.CanContinue(cancellation.Token, playbackRequested, false, true, 7, 7))
+                    Interlocked.Increment(ref transportCalls);
+            });
+            playbackRequested = false;
+            cancellation.Cancel();
+            disposed.SetResult(true);
+            recovery.GetAwaiter().GetResult();
+            Assert(transportCalls == 0, "Pause during disposal allowed a playback or seek command");
+            Assert(!RecoveryContinuation.CanContinue(CancellationToken.None, true, false, true, 7, 8),
+                "a replacement session accepted stale renderer recovery");
+        }
+    }
+
+    private static void NewConnectSessionRearmsRecovery()
+    {
+        var block = new SessionRecoveryBlock();
+        block.Block();
+        block.AcceptSession(false, 4, 4);
+        Assert(block.IsBlocked, "a disconnect incorrectly reset recovery");
+        block.AcceptSession(true, 3, 4);
+        Assert(block.IsBlocked, "a stale connection event reset recovery");
+        block.AcceptSession(true, 4, 4);
+        Assert(!block.IsBlocked, "a successful new Connect transfer left recovery disabled");
+    }
+
+    private static void RendererStallDetectionSeparatesProducerFromConsumer()
+    {
+        var monitor = new RendererHealthMonitor();
+        Assert(!monitor.ShouldReportStall(true, true, 4096, 1024, 100, 1000, 6000),
+            "renderer stall was reported before its observation interval");
+        Assert(monitor.ShouldReportStall(true, true, 4096, 1024, 100, 7000, 6000),
+            "a stopped consumer with a healthy buffered producer was not detected");
+        Assert(!monitor.ShouldReportStall(true, true, 4096, 1024, 100, 8000, 6000),
+            "the same renderer stall was reported repeatedly");
+        Assert(!monitor.ShouldReportStall(true, true, 4096, 1024, 200, 9000, 6000),
+            "consumer progress did not reset renderer stall detection");
+        Assert(!monitor.ShouldReportStall(true, true, 512, 1024, 200, 16000, 6000),
+            "a low producer buffer was misclassified as a renderer stall");
+        Assert(!monitor.ShouldReportStall(false, true, 4096, 1024, 200, 23000, 6000),
+            "intentional pause was classified as a renderer fault");
+    }
+
+    private static void StabilityRecoveryPathsRemainAccountAndLifecycleSafe()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var media = File.ReadAllText(Path.Combine(repositoryRoot, "LibreSpotUWP", "Services", "MediaService.cs"));
+        var app = File.ReadAllText(Path.Combine(repositoryRoot, "LibreSpotUWP", "App.xaml.cs"));
+        var backgroundManager = File.ReadAllText(Path.Combine(repositoryRoot, "LibreSpotUWP", "Helpers", "UwpBackgroundExecutionManager.cs"));
+
+        var rendererStart = media.IndexOf("private async Task RecoverRendererAsync(", StringComparison.Ordinal);
+        var rendererEnd = media.IndexOf("private async Task RunRequestedProducerRecoveryAsync(", rendererStart, StringComparison.Ordinal);
+        Assert(rendererStart >= 0 && rendererEnd > rendererStart,
+            "separate renderer recovery could not be inspected");
+        var rendererRecovery = media.Substring(rendererStart, rendererEnd - rendererStart);
+        Assert(rendererRecovery.Contains("CreateAudioPlayerAsync") &&
+               rendererRecovery.Contains("CanContinueRendererRecovery") &&
+               !rendererRecovery.Contains("ReconnectWithPlaybackAuthAsync"),
+            "renderer recovery must rebuild only the audio path and restore position");
+        Assert(media.Contains("GetActivePlaybackSessionUser()") &&
+               media.Contains("PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization") &&
+               media.Contains("Automatic owner reconnect skipped"),
+            "automatic session recovery can still replace guest playback with owner credentials");
+        Assert(media.Contains("OwnerAccountId = PlaybackRecoveryAuthorizationPolicy.CanUseOwnerAuthorization") &&
+               media.Contains("Automatic resume skipped because the saved playback owner is missing") &&
+               media.Contains("if (forceWrite)") &&
+               media.Contains("SavePlaybackSnapshot(revision, serializedSnapshot)") &&
+               media.Contains("_snapshotWriter.TryWrite(revision"),
+            "snapshot restore can still autoplay a guest session with the app owner's authorization");
+        Assert(media.Contains("backoffCleared") &&
+               media.Contains("ScheduleNetworkStatusReconciliation(\"Windows network status changed\")") &&
+               media.Contains("await HandleNetworkStatusChangedAsync().ConfigureAwait(false)"),
+            "clearing network backoff can still skip connectivity reconciliation");
+        Assert(app.Contains("RunSuspendingWorkAsync") &&
+               app.Contains("AddSeconds(4)") &&
+               app.Contains("EnteredBackground += OnEnteredBackground") &&
+               app.Contains("LeavingBackground += OnLeavingBackground"),
+            "lifecycle work is not deadline-bounded or background transitions are not recorded");
+        Assert(backgroundManager.Contains("_requestGate.WaitAsync()") &&
+               backgroundManager.Contains("ClearSession(candidate)") &&
+               backgroundManager.Contains("Session_Revoked"),
+            "extended execution requests and revocation are not serialized and cleaned up");
+        var logService = File.ReadAllText(Path.Combine(repositoryRoot, "LibreSpotUWP", "Services", "LogService.cs"));
+        Assert(logService.Contains("ExportRedactedDiagnosticsAsync") &&
+               logService.Contains("LibreSpotUWP-diagnostics.txt") &&
+               logService.Contains("launch={ProcessLaunchId}"),
+            "bounded redacted diagnostic export or process-launch correlation is missing");
+    }
+
+    private static void DiagnosticExportRedactsAuthenticationMaterial()
+    {
+        var redacted = DiagnosticRedactor.Redact(
+            "{\"access_token\":\"token-secret\"} Authorization: Bearer abc.def Spotify-Connected as user: family-user C:\\Users\\pablo\\file.txt");
+        Assert(!redacted.Contains("token-secret") &&
+               !redacted.Contains("abc.def") &&
+               !redacted.Contains("family-user") &&
+               !redacted.Contains("C:\\Users\\pablo"),
+            "diagnostic export redactor left authentication material or a Windows username in output");
+        Assert(redacted.Contains("[redacted]"),
+            "diagnostic redactor did not mark removed values");
+    }
+
     private static void VolumeSliderWorkIsCoalesced()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -361,7 +548,7 @@ internal static class Program
 
         var rustRoot = Path.Combine(
             Directory.GetParent(repositoryRoot).FullName,
-            "librespot",
+            "librespot-upstream",
             "playback",
             "src",
             "audio_backend");
@@ -834,7 +1021,7 @@ internal static class Program
                 theme + " settings do not switch backends or update effect capabilities");
         }
 
-        var rustRoot = Path.Combine(Directory.GetParent(repositoryRoot).FullName, "librespot", "playback", "src", "audio_backend");
+        var rustRoot = Path.Combine(Directory.GetParent(repositoryRoot).FullName, "librespot-upstream", "playback", "src", "audio_backend");
         var ring = File.ReadAllText(Path.Combine(rustRoot, "uwp_ring.rs"));
         var wasapi = File.ReadAllText(Path.Combine(rustRoot, "uwp_wasapi.rs"));
         var xaudio2 = File.ReadAllText(Path.Combine(rustRoot, "uwp_xaudio2.rs"));
