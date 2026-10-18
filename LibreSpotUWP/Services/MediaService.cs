@@ -226,6 +226,8 @@ namespace LibreSpotUWP.Services
 
             commandManager.ShuffleReceived += OnSmtcShuffleReceived;
             commandManager.AutoRepeatModeReceived += OnSmtcAutoRepeatModeReceived;
+            commandManager.PlayReceived += OnSmtcPlayReceived;
+            commandManager.PauseReceived += OnSmtcPauseReceived;
 
             _smtc = _mediaPlayer.SystemMediaTransportControls;
             _smtc.IsPlayEnabled = true;
@@ -2967,9 +2969,18 @@ namespace LibreSpotUWP.Services
                         }
 
                         await EnsureRingPlayerAsync();
-                        if (!await _ringPlayer.RequestPlaybackAsync(
+                        var playbackReady = _ringPlayer.RequestPlaybackAsync(
                             playbackEvent.PlayRequestId,
-                            playbackEvent.AudioGeneration))
+                            playbackEvent.AudioGeneration);
+                        // Rejected/stale requests complete synchronously. Arm only accepted
+                        // playback, before waiting for PCM pre-roll during the first lock.
+                        if (!playbackReady.IsCompleted || await playbackReady)
+                        {
+                            _smtc.PlaybackStatus = MediaPlaybackStatus.Playing;
+                            if (_mediaPlayer.PlaybackSession.PlaybackState != MediaPlaybackState.Playing)
+                                _mediaPlayer.Play();
+                        }
+                        if (!await playbackReady)
                         {
                             LogService.Info($"[MediaService.OnPlaybackChanged] Ignoring stale PlaybackResumed generation={playbackEvent.AudioGeneration}, request={playbackEvent.PlayRequestId}.");
                             return;
@@ -5248,14 +5259,9 @@ namespace LibreSpotUWP.Services
 
         private async void OnSmtcButtonPressed(SystemMediaTransportControls sender, SystemMediaTransportControlsButtonPressedEventArgs args)
         {
+            LogService.Info($"SMTC button received: {args.Button}.");
             switch (args.Button)
             {
-                case SystemMediaTransportControlsButton.Play:
-                    await ResumeAsync();
-                    break;
-                case SystemMediaTransportControlsButton.Pause:
-                    await PauseAsync();
-                    break;
                 case SystemMediaTransportControlsButton.Stop:
                     await StopAsync();
                     break;
@@ -5266,6 +5272,38 @@ namespace LibreSpotUWP.Services
                     Previous();
                     break;
             }
+        }
+
+        private async void OnSmtcPlayReceived(MediaPlaybackCommandManager sender, MediaPlaybackCommandManagerPlayReceivedEventArgs args)
+        {
+            args.Handled = true;
+            var deferral = args.GetDeferral();
+            try
+            {
+                LogService.Info("SMTC Play command received.");
+                await ResumeAsync();
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn($"SMTC Play failed: {ex.Message}");
+            }
+            finally { deferral.Complete(); }
+        }
+
+        private async void OnSmtcPauseReceived(MediaPlaybackCommandManager sender, MediaPlaybackCommandManagerPauseReceivedEventArgs args)
+        {
+            args.Handled = true;
+            var deferral = args.GetDeferral();
+            try
+            {
+                LogService.Info("SMTC Pause command received.");
+                await PauseAsync();
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn($"SMTC Pause failed: {ex.Message}");
+            }
+            finally { deferral.Complete(); }
         }
 
         private MediaSource CreateSilentMediaSource()
@@ -5927,6 +5965,8 @@ namespace LibreSpotUWP.Services
             {
                 _mediaPlayer.CommandManager.ShuffleReceived -= OnSmtcShuffleReceived;
                 _mediaPlayer.CommandManager.AutoRepeatModeReceived -= OnSmtcAutoRepeatModeReceived;
+                _mediaPlayer.CommandManager.PlayReceived -= OnSmtcPlayReceived;
+                _mediaPlayer.CommandManager.PauseReceived -= OnSmtcPauseReceived;
             }
 
             _librespot.EndOfTrack -= OnEndOfTrack;

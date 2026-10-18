@@ -104,7 +104,7 @@ underlying OS family is a phone. `Smartphone` is a Spotify controller/client ide
 advertising it made Connect mirror the source playback position while transfers remained
 stuck in `Connecting`. Validate this in `/?action=getInfo`: `deviceType` must be `Speaker`.
 
-When `SpotifyLocalDiscoveryEnabled` is enabled, the app requests UWP extended execution while it is foregrounded. This request is deliberately independent of an active Spotify playback session: the Connect mDNS advertisement and HTTP control endpoint must remain available when playback is idle and the app is suspended. The request is renewed at launch, on suspension, and when a Connect session becomes idle. Windows may revoke extended execution under battery, policy, or resource pressure; logs then report `Extended execution session revoked`, and the Lumia must be brought to the foreground to advertise again. This is a platform constraint, not a librespot listener failure.
+When `SpotifyLocalDiscoveryEnabled` is enabled, the app requests UWP extended execution while it is foregrounded, independently of an active Spotify playback session. The request is renewed at launch, on suspension, and when a Connect session becomes idle. `ExtendedExecutionReason.Unspecified` does not guarantee execution in Windows 10 Mobile Connected Standby. Locked idle mDNS/TCP availability is currently an unmet requirement, not a validated capability. Bring the app to the foreground for reliable discovery until the locked-device matrix in `STABILITY_PLAN.md` passes. Revocation logs help diagnosis but do not by themselves distinguish a listener defect from network power policy.
 
 ## CI recommendation
 

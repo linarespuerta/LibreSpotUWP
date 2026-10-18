@@ -38,6 +38,7 @@ internal static class Program
             TileRefreshBurstProducesOneUpdate,
             LiveTileUpdatesAreImmediateAndDurable,
             BackgroundingPreservesActiveLocalPlayback,
+            LockScreenCommandsHaveOnePlaybackOwner,
             RepetitiveTelemetryProducesOneSinkEntry,
             PlaybackEventStormCreatesOnePendingDispatcherItem,
             MetadataAndLyricsCompletionCannotOutliveNavigation,
@@ -830,6 +831,35 @@ internal static class Program
                !prepare.Contains("_mediaPlayer?.Pause") &&
                !prepare.Contains("_librespot.PauseAsync"),
             "pressing Home can still issue an explicit playback pause");
+    }
+
+    private static void LockScreenCommandsHaveOnePlaybackOwner()
+    {
+        var media = File.ReadAllText(Path.Combine(FindRepositoryRoot(),
+            "LibreSpotUWP", "Services", "MediaService.cs"));
+        foreach (var command in new[] { "Play", "Pause" })
+        {
+            Assert(media.Contains($"commandManager.{command}Received += OnSmtc{command}Received") &&
+                   media.Contains($"CommandManager.{command}Received -= OnSmtc{command}Received"),
+                command + " command handler lifetime is incomplete");
+            var start = media.IndexOf("private async void OnSmtc" + command + "Received", StringComparison.Ordinal);
+            var end = media.IndexOf("\n        private ", start + 1, StringComparison.Ordinal);
+            var handler = media.Substring(start, end - start);
+            Assert(handler.Contains("args.Handled = true") && handler.Contains("args.GetDeferral()") &&
+                   handler.Contains("deferral.Complete()"),
+                command + " can fall through to the silent player's automatic transport");
+        }
+        var buttonStart = media.IndexOf("private async void OnSmtcButtonPressed", StringComparison.Ordinal);
+        var buttonEnd = media.IndexOf("private async void OnSmtcPlayReceived", buttonStart, StringComparison.Ordinal);
+        var buttons = media.Substring(buttonStart, buttonEnd - buttonStart);
+        Assert(!buttons.Contains("await ResumeAsync()") && !buttons.Contains("await PauseAsync()"),
+            "Play/Pause can be dispatched twice through ButtonPressed");
+        var ready = media.IndexOf("var playbackReady = _ringPlayer.RequestPlaybackAsync", StringComparison.Ordinal);
+        var arm = media.IndexOf("_mediaPlayer.Play()", ready, StringComparison.Ordinal);
+        var wait = media.IndexOf("if (!await playbackReady)", ready, StringComparison.Ordinal);
+        Assert(ready >= 0 && arm > ready && wait > arm &&
+               media.Substring(ready, arm - ready).Contains("!playbackReady.IsCompleted || await playbackReady"),
+            "background media must arm before PCM pre-roll, excluding rejected requests");
     }
 
     private static void RepetitiveTelemetryProducesOneSinkEntry()

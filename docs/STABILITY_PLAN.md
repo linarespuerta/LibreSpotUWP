@@ -186,6 +186,22 @@ Review corrections: reconnect retry state now follows the single generation incr
 
 ## New device observations to resolve in the next session (2026-10-18)
 
+### Correction checkpoint: lock-screen transport and activation ordering
+
+Implemented after source review:
+
+- `MediaPlaybackCommandManager` was enabled while `ButtonPressed` independently dispatched Play/Pause to librespot. The automatic manager could therefore change only the silent sponsor's state, independently of the audible renderer. Play/Pause now use the command manager's received events, mark the command handled, hold a deferral across the real transport operation, and log failures. The duplicate ButtonPressed Play/Pause route was removed; shuffle/repeat integration is retained. This follows Microsoft's [command manager guidance](https://learn.microsoft.com/en-us/uwp/api/windows.media.playback.mediaplaybackcommandmanager.isenabled).
+- Accepted native playback now starts the background MediaPlayer and publishes SMTC Playing before awaiting PCM pre-roll. Synchronously rejected stale requests do not arm it. Existing final publication after pre-roll remains in place. This reduces the first-lock activation window; it does not prove that the observed device pause is fixed.
+- The portable suite includes a source-wiring regression for command ownership, deferrals, handler cleanup, and sponsor activation before pre-roll. Existing transition tests exercise stale native requests and cancelled transitions. These tests cannot simulate Windows lock-screen policy.
+
+Locked discovery remains open, not fixed by this checkpoint. Native `../librespot-upstream/discovery/src/server.rs` binds a Rust `std::net::TcpListener` and converts it to a Tokio listener. This is not a WinRT `StreamSocketListener` with socket-broker ownership. Adding a manifest task or `IsNetworkRequested` alone cannot hand that existing listener to the broker. Multicast advertisement and TCP credential exchange both need an execution/ownership design; fixing only advertisement would leave controllers stuck connecting.
+
+There is also a separate active-stream networking gap: the sponsor supplies locally generated silence, while librespot fetches the real stream. Microsoft [documents](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/background-audio) that network-aware media sources retain networking while fetching remote content, and that MediaStreamSource relies on accurate `SetBufferedRange` reporting. Reporting an invented buffered range for the silent source would not describe the real stream. If lock-time traces show networking is removed despite an active sponsor, implement a separately tested real-PCM MediaStreamSource path with truthful buffering, rather than patching silence metadata.
+
+Next acceptance step: package the managed correction using the existing native DLL, then capture immediate-first-lock and delayed-lock playback, intentional lock-screen Play/Pause, and locked active/idle TCP/getInfo plus discovery from a second account. If active playback survives but idle reception does not, evaluate the WinRT socket-broker port as a separate native/managed milestone using the decision tree below. No product decision is needed for the implemented corrections. An always-reachable locked idle receiver remains an unmet goal requiring platform feasibility evidence; no always-on screen behavior is enabled implicitly.
+
+Validation: portable suite passed, including the new wiring regression; sibling Login Helper audit remains skipped because its checkout is absent. Managed ARM build results are recorded in `TEST_PLAN.md`. Lumia verification and a new APPX remain pending.
+
 ### A. First screen lock pauses once
 
 Observed behavior: the first transition to the lock screen pauses playback. Pressing Play from the lock screen restores playback, and subsequent screen-off periods behave normally.
