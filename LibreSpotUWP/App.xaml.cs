@@ -23,6 +23,7 @@ using Windows.UI.Xaml.Data;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
+using Windows.System;
 
 namespace LibreSpotUWP
 {
@@ -60,6 +61,8 @@ namespace LibreSpotUWP
             InitializeComponent();
             Suspending += OnSuspending;
             Resuming += OnResuming;
+            EnteredBackground += OnEnteredBackground;
+            LeavingBackground += OnLeavingBackground;
             UnhandledException += App_UnhandledException;
             TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
         }
@@ -529,17 +532,18 @@ namespace LibreSpotUWP
         {
             UiResponsivenessTelemetry.Stop();
             var deferral = e.SuspendingOperation.GetDeferral();
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(4);
             try
             {
-                await UpdateDiscoveryKeepAliveAsync();
                 if (Media != null)
-                    await Media.PrepareForSuspendingAsync();
+                    await RunSuspendingWorkAsync(() => Media.PrepareForSuspendingAsync(), deadline, "media preparation");
+                await RunSuspendingWorkAsync(UpdateDiscoveryKeepAliveAsync, deadline, "discovery keep-alive");
                 if (LiveTiles != null)
-                    await LiveTiles.PrepareForSuspendingAsync();
+                    await RunSuspendingWorkAsync(() => LiveTiles.PrepareForSuspendingAsync(), deadline, "live-tile preparation");
             }
             catch (Exception ex)
             {
-                LogService.Warn($"Unable to refresh live tile while suspending: {ex.Message}");
+                LogService.Warn($"Suspension preparation failed: {ex.Message}");
             }
             finally
             {
@@ -547,10 +551,65 @@ namespace LibreSpotUWP
             }
         }
 
+        private static async Task RunSuspendingWorkAsync(Func<Task> work, DateTimeOffset deadline, string name)
+        {
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                LogService.Warn($"Skipping {name}; suspension preparation deadline elapsed.");
+                return;
+            }
+
+            Task operation;
+            try
+            {
+                operation = work();
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn($"{name} failed during suspension: {ex.Message}");
+                return;
+            }
+
+            if (await Task.WhenAny(operation, Task.Delay(remaining)) != operation)
+            {
+                LogService.Warn($"{name} exceeded the suspension preparation deadline.");
+                operation.ContinueWith(
+                    task => { var ignored = task.Exception; },
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                return;
+            }
+
+            try
+            {
+                await operation;
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn($"{name} failed during suspension: {ex.Message}");
+            }
+        }
+
+        private void OnEnteredBackground(object sender, EnteredBackgroundEventArgs e)
+        {
+            LogService.Telemetry(
+                "app-lifecycle-entered-background",
+                $"Application entered background. appMemoryBytes={MemoryManager.AppMemoryUsage}, appMemoryLimitBytes={MemoryManager.AppMemoryUsageLimit}, memoryLevel={MemoryManager.AppMemoryUsageLevel}.");
+        }
+
+        private void OnLeavingBackground(object sender, LeavingBackgroundEventArgs e)
+        {
+            LogService.Telemetry("app-lifecycle-leaving-background", "Application is leaving background.");
+        }
+
         private async void OnResuming(object sender, object e)
         {
             try
             {
+                LogService.Info("Application resumed from suspension; reconciling media and connectivity state.");
+                LogService.Telemetry(
+                    "app-lifecycle-resumed-memory",
+                    $"Application resumed. appMemoryBytes={MemoryManager.AppMemoryUsage}, appMemoryLimitBytes={MemoryManager.AppMemoryUsageLimit}, memoryLevel={MemoryManager.AppMemoryUsageLevel}.");
                 UiResponsivenessTelemetry.Start();
                 if (Media != null)
                     await Media.ResumeAfterSuspendingAsync();

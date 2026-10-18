@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Storage;
@@ -30,13 +29,8 @@ namespace LibreSpotUWP.Services
             new RepetitiveEventLimiter(TimeSpan.FromSeconds(30));
         private static readonly SemaphoreSlim _queueSignal = new SemaphoreSlim(0);
         private static readonly object _writerLock = new object();
-        private static readonly Regex JsonSecretRegex = new Regex("(\"(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|auth[_-]?blob|audio[_-]?key|private[_-]?key|code)\"\\s*:\\s*\")[^\"]*(\")", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        private static readonly Regex KeyValueSecretRegex = new Regex("\\b((?:access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|auth[_-]?blob|audio[_-]?key|private[_-]?key|code)\\s*[:=]\\s*)[^&\\s,;}\\]]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        private static readonly Regex BearerTokenRegex = new Regex("\\bBearer\\s+[A-Za-z0-9._~+/-]+=*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        private static readonly Regex WindowsUserPathRegex = new Regex("C:\\\\Users\\\\[^\\\\]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        private static readonly Regex SpotifyAuthenticatedAsRegex = new Regex("(Authenticated as ')[^']+(')", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        private static readonly Regex SpotifyConnectedUserRegex = new Regex("(Connected as user:\\s*)\\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        private static readonly Regex LeadingBracketPrefixRegex = new Regex("^\\[([^\\]]+)\\]\\s*", RegexOptions.CultureInvariant);
+        private static readonly string ProcessLaunchId = Guid.NewGuid().ToString("N").Substring(0, 10);
+        private static readonly System.Text.RegularExpressions.Regex LeadingBracketPrefixRegex = new System.Text.RegularExpressions.Regex("^\\[([^\\]]+)\\]\\s*", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         private static string _logPath;
         private static Task _writerTask;
         private static int _queuedEntries;
@@ -92,6 +86,24 @@ namespace LibreSpotUWP.Services
                 DroppedEntries = Interlocked.Read(ref _totalDroppedEntries),
                 FileWriteCount = Interlocked.Read(ref _fileWriteCount)
             };
+        }
+
+        public static async Task<StorageFile> ExportRedactedDiagnosticsAsync()
+        {
+            EnsureWriterStarted();
+            for (int attempt = 0; attempt < 20 && Volatile.Read(ref _queuedEntries) > 0; attempt++)
+                await Task.Delay(100).ConfigureAwait(false);
+            await Task.Delay(BatchWindowMilliseconds).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(_logPath) || !File.Exists(_logPath))
+                throw new FileNotFoundException("LibreSpot diagnostics log is not available.");
+
+            var contents = await File.ReadAllTextAsync(_logPath).ConfigureAwait(false);
+            var exportFile = await ApplicationData.Current.LocalFolder.CreateFileAsync(
+                "LibreSpotUWP-diagnostics.txt",
+                CreationCollisionOption.ReplaceExisting);
+            await FileIO.WriteTextAsync(exportFile, contents);
+            return exportFile;
         }
 
         private static void Enqueue(string level, string className, string member, string message)
@@ -153,7 +165,7 @@ namespace LibreSpotUWP.Services
                             entry.ClassName,
                             entry.Member,
                             Sanitize(entry.Message));
-                        string line = $"{entry.Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{entry.Level}] {sanitizedMessage}";
+                        string line = $"{entry.Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [launch={ProcessLaunchId}] [{entry.Level}] {sanitizedMessage}";
                         Trace.WriteLine(line);
                         batch.AppendLine(line);
                         count++;
@@ -214,19 +226,7 @@ namespace LibreSpotUWP.Services
                 : $"context={tag} {body}";
         }
 
-        private static string Sanitize(string message)
-        {
-            if (string.IsNullOrEmpty(message))
-                return message;
-
-            message = JsonSecretRegex.Replace(message, "$1[redacted]$2");
-            message = KeyValueSecretRegex.Replace(message, "$1[redacted]");
-            message = BearerTokenRegex.Replace(message, "Bearer [redacted]");
-            message = WindowsUserPathRegex.Replace(message, "C:\\Users\\[user]");
-            message = SpotifyAuthenticatedAsRegex.Replace(message, "$1[redacted]$2");
-            message = SpotifyConnectedUserRegex.Replace(message, "$1[redacted]");
-            return message;
-        }
+        private static string Sanitize(string message) => DiagnosticRedactor.Redact(message);
     }
 
     public sealed class LogDiagnosticsSnapshot

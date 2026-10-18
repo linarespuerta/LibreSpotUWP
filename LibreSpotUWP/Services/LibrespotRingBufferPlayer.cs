@@ -41,6 +41,7 @@ namespace LibreSpotUWP.Services
         private Task _disposeTask;
         private readonly CallbackLifetimeGate _callbackLifetime = new CallbackLifetimeGate();
         private readonly ProducerHealthMonitor _producerHealth = new ProducerHealthMonitor();
+        private readonly RendererHealthMonitor _rendererHealth = new RendererHealthMonitor();
         private AudioGraph _graph;
         private AudioFrameInputNode _inputNode;
         private EchoEffectDefinition _echoEffect;
@@ -897,6 +898,27 @@ namespace LibreSpotUWP.Services
                     ? Math.Min((ulong)Math.Max(0, _capacityBytes), producer.WriteSequence - readSequence)
                     : 0;
                 ulong lowBufferBytes = (ulong)Math.Max(0, MillisecondsToAlignedBytes(ProducerLowBufferMilliseconds));
+                var healthSnapshot = _producerHealth.Snapshot;
+                if (_rendererHealth.ShouldReportStall(
+                    healthSnapshot.PlaybackExpected,
+                    Volatile.Read(ref _consumerEnabled) != 0,
+                    availableBytes,
+                    lowBufferBytes,
+                    readSequence,
+                    nowMs,
+                    ProducerStallIntervalMs))
+                {
+                    LogService.Warn($"[LibrespotRingBufferPlayer.RendererStall] graphId={_graphInstanceId}, sessionGeneration={healthSnapshot.SessionGeneration}, trackGeneration={healthSnapshot.TrackGeneration}, bufferedMs={BytesToMilliseconds((long)availableBytes):F1}, consumerReadSequence={(long)readSequence}.");
+                    ProducerStalled?.Invoke(this, new ProducerStalledEventArgs
+                    {
+                        GraphInstanceId = _graphInstanceId,
+                        SessionGeneration = healthSnapshot.SessionGeneration,
+                        TrackGeneration = healthSnapshot.TrackGeneration,
+                        Reason = "renderer-stalled",
+                        AvailableBytes = availableBytes
+                    });
+                }
+
                 var decision = _producerHealth.Evaluate(
                     nowMs,
                     availableBytes,

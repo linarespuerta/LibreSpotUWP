@@ -374,6 +374,112 @@ namespace LibreSpotUWP.Services
         }
     }
 
+    internal sealed class RecoveryGenerationTracker
+    {
+        public long Expected { get; private set; }
+        public RecoveryGenerationTracker(long generation) { Expected = generation; }
+        public async Task RunAttemptAsync(Func<Task> reconnect, Func<long> currentGeneration)
+        {
+            try { await reconnect().ConfigureAwait(false); }
+            finally
+            {
+                long current = currentGeneration();
+                if (current == Expected + 1) Expected = current;
+            }
+        }
+    }
+
+    internal sealed class VersionedSnapshotWriter
+    {
+        private readonly object _sync = new object();
+        private long _revision;
+
+        public long Reserve()
+        {
+            lock (_sync) return ++_revision;
+        }
+
+        public bool TryWrite(long revision, Action write)
+        {
+            lock (_sync)
+            {
+                if (revision != _revision) return false;
+                write();
+                return true;
+            }
+        }
+    }
+
+    internal sealed class SessionRecoveryBlock
+    {
+        private int _blocked;
+        public bool IsBlocked => Volatile.Read(ref _blocked) != 0;
+        public void Block() => Interlocked.Exchange(ref _blocked, 1);
+        public void Reset() => Interlocked.Exchange(ref _blocked, 0);
+        public void AcceptSession(bool connected, long eventGeneration, long currentGeneration)
+        {
+            if (connected && eventGeneration == currentGeneration) Reset();
+        }
+    }
+
+    internal static class RecoveryContinuation
+    {
+        public static bool CanContinue(CancellationToken token, bool playbackRequested,
+            bool disposed, bool local, long expectedGeneration, long currentGeneration)
+        {
+            return !token.IsCancellationRequested && playbackRequested && !disposed && local &&
+                expectedGeneration == currentGeneration;
+        }
+    }
+
+    internal sealed class RendererHealthMonitor
+    {
+        private readonly object _sync = new object();
+        private ulong _lastReadSequence;
+        private long _stalledSinceMs;
+        private bool _initialized;
+        private bool _stallSignalled;
+
+        public bool ShouldReportStall(
+            bool playbackExpected,
+            bool consumerEnabled,
+            ulong bufferedBytes,
+            ulong lowBufferThresholdBytes,
+            ulong readSequence,
+            long nowMs,
+            long stallIntervalMs)
+        {
+            lock (_sync)
+            {
+                if (!playbackExpected || !consumerEnabled || bufferedBytes <= lowBufferThresholdBytes)
+                {
+                    Reset(readSequence, nowMs);
+                    return false;
+                }
+
+                if (!_initialized || readSequence != _lastReadSequence)
+                {
+                    Reset(readSequence, nowMs);
+                    return false;
+                }
+
+                if (_stallSignalled || nowMs - _stalledSinceMs < stallIntervalMs)
+                    return false;
+
+                _stallSignalled = true;
+                return true;
+            }
+        }
+
+        private void Reset(ulong readSequence, long nowMs)
+        {
+            _lastReadSequence = readSequence;
+            _stalledSinceMs = nowMs;
+            _initialized = true;
+            _stallSignalled = false;
+        }
+    }
+
     internal static class BoundedRecoveryBackoff
     {
         public static int GetDelayMilliseconds(int attempt)
