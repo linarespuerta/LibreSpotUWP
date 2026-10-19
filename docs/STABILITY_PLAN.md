@@ -4,6 +4,27 @@ Date: 2026-10-18. Status: reopened for loss of remote control after the controll
 
 ## Reopened: controller lock loses remote control (2026-10-18)
 
+### Physical log evidence: intermittent receiver networking
+
+Device Portal access succeeded and confirmed installed version 1.0.15.0. Two copies of the receiver's TemporaryFolder log were downloaded outside Git. The user reported successful initial commands, loss of control after roughly 30 seconds, and subsequent relinking. The latest captured interval provides stronger evidence than the earlier source-only hypothesis:
+
+| Receiver log time (local, 2026-10-18) | Observed event |
+| --- | --- |
+| 20:59:10–20:59:40 | Repeated native PlaybackPaused/PlaybackResumed events; managed publication follows. Commands were reaching the native player. |
+| 20:59:24.250 | Lumia application enters background. This event belongs to the receiver, not the controller. It does not establish whether the user locked the Lumia, navigated away or another UI transition occurred. |
+| 20:59:40.641 | Native Connect state publication fails with `client error (SendRequest)`; the managed Spotify playback query also fails. |
+| 20:59:44.916–20:59:54.948 | Repeated Connect heartbeat publication failures, including `client error (Connect)`. |
+| 20:59:55.983 | Lumia application leaves background. |
+| 21:00:31.500–21:00:32.162 | Native Pause and Resume appear again in the same managed session generation, consistent with the user's report of restored control. |
+
+Earlier in the same launch, repeated endpoint-resolution failures and Windows error 11001 (`No such host is known`) prevented reconnects until the receiver returned to foreground and connected again. Do not merge those older failures into the latest short interval or blame the household DNS server without an independent resolver/network test. Use the outer dated logger timestamp: the embedded native text timestamp is constant in this capture and is not reliable for event ordering.
+
+Confirmed for this capture: receiver-side network requests fail across both native Connect publication and managed Spotify HTTP paths; Pause/Play initially reaches the player and later returns. This is not solely an ignored managed Pause callback, and uninterrupted audio does not prove control connectivity. No Spirc-task termination or managed session-generation change is logged inside the latest short failure/recovery window. The source-only terminal Dealer task hypothesis is therefore not established as this episode's root cause; keep its characterization tests as a separate hardening finding.
+
+Leading hypothesis: background networking lifetime on the Lumia, given the timing and the locally generated silent MediaStreamSource described below. Microsoft [documents](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/background-audio#network-availability-for-background-media-apps) that media-related network reservation depends on the actual network-aware media source and accurate MediaStreamSource buffering reports. This supports an investigation, not proof that Windows withdrew networking in this run. Neither the exact controller lock time nor the cause of receiver background entry has been correlated yet.
+
+Next confirmation: hold the Lumia app visibly foregrounded with its screen awake while locking only the controller; repeat beyond one minute and issue remote commands. Then keep the controller awake while backgrounding/locking only the Lumia. Capture command outcomes and both lifecycle/network timelines without changing DNS, router or homelab configuration. If failure follows receiver background state, prioritize supported streaming-network lifetime and control-health recovery ahead of the independently confirmed Dealer URL-error gap. A real-PCM platform source remains a candidate requiring measurement and format/seek/continuity tests, not a proven fix. No new APPX or runtime modification was made during this evidence capture.
+
 Priority: required for the next delivery, ahead of visual polish. User report on the current 1.0.15.0 baseline: transfer from the controller phone to the Lumia succeeds and music plays; locking the controller phone loses the control connection. The Lumia continues playing, but Pause on the controller no longer affects it. The receiver appears to operate independently. This is a new failed functional acceptance scenario, not evidence that autonomous audio playback is the desired result.
 
 The phone being locked here is the Spotify controller, not necessarily the Lumia. Lumia lock state, controller OS/Spotify version, owner versus guest session, time to failure, selected target after unlocking, and recovery behavior have not yet been established. Do not attribute this to Lumia suspension, mDNS, controller power management or a confirmed native-session bug without a correlated trace. Continuous audio alone does not establish a healthy Connect control channel.
