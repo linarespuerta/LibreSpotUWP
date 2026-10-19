@@ -12,6 +12,8 @@ The local/desktop boundary is documented in [LOCAL_TESTING.md](LOCAL_TESTING.md)
 
 ## Stability implementation validation (2026-10-18)
 
+New failed physical scenario after initial acceptance: on 1.0.15.0 the user reports that locking the Spotify controller phone loses remote control; the Lumia continues playing and ignores Pause from the controller. Receiver lock state and root cause are unconfirmed. Initial functional acceptance does not cover this scenario. Track R0 in `STABILITY_PLAN.md` and `HIFI_UI_PLAN.md`; require owner/guest controller-lock tests, selected-target verification, native command/session traces and successful remote commands without touching the Lumia before closing it. This documentation update does not claim a runtime correction or a newly executed device test.
+
 User acceptance update: after installing 1.0.15.0, the user reported that it works and requested closure of the current stability delivery. This is a functional acceptance report; individual lock-cycle, locked-idle discovery, outage and long-run matrix results were not supplied. Retain those as deferred qualification, as recorded in `STABILITY_PLAN.md`. The next UI work uses 1.0.15.0 as its accepted baseline.
 
 APPX review follow-up (1.0.15.0): added current-intent/session/PCM checks around playback readiness so a late pre-roll completion cannot publish an obsolete Playing state. The full portable suite passed, including the expanded lock-screen wiring regression; the Login Helper audit remains skipped. Signed ARM package validation is recorded in `STABILITY_PLAN.md` after generation. Hardware acceptance remains pending.

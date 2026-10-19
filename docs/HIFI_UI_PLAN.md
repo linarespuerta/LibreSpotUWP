@@ -1,12 +1,18 @@
 # Goal 2: dedicated Hi-Fi Now Playing
 
-Date: 2026-10-18. Status: ready for implementation; design direction proposed, no UI code changed in this planning delivery.
+Date: 2026-10-18. Status: planned; next delivery begins with R0 remote-control continuity, then the Hi-Fi view. No runtime code changed in this planning delivery.
 
 ## Outcome and boundaries
 
 Turn the Lumia's player into a calm, legible music-receiver display beside the vintage Marantz: large album artwork, clear track/artist/album, accurate progress, simple transport and volume controls, and honest connection state. Support portrait handheld use and landscape placement beside the amplifier. Reuse the existing application and playback services.
 
-Baseline: user accepted ARM32 package 1.0.15.0. Preserve its playback, family-account transfer, lock-screen controls and background lifecycle. Keep package identity, current authentication and native DLL unchanged for UI-only milestones. This is visual Hi-Fi styling, not Goal 4 audio optimization; do not display unmeasured bit-perfect, lossless, DAC, sample-rate or output-format claims.
+Baseline: ARM32 package 1.0.15.0 received initial user acceptance, followed by a controller-lock regression: the Lumia keeps playing but no longer obeys the controller's Pause. This is an open functional defect. Preserve working playback, family-account transfer, lock-screen controls and background lifecycle while resolving it. Keep package identity, current authentication and native DLL unchanged for UI-only milestones. This is visual Hi-Fi styling, not Goal 4 audio optimization; do not display unmeasured bit-perfect, lossless, DAC, sample-rate or output-format claims.
+
+## R0 prerequisite: wireless control survives controller lock
+
+The primary appliance interaction is Spotify on a household member's phone. The Lumia must remain controllable after that phone locks/backgrounds, without walking over to the receiver or maintaining a queue on its screen. Autonomous audio with an unresponsive remote is a failed result. See the reopened investigation, source anchors and owner/guest acceptance matrix in [STABILITY_PLAN.md](STABILITY_PLAN.md#reopened-controller-lock-loses-remote-control-2026-10-18).
+
+Implement and qualify the evidence-backed R0 correction before accepting the next combined UI candidate. Test controller lock independently from Lumia lock, remote commands from both lock screen and reopened Spotify, selected-device/state reconciliation, controller queue edits, account-safe recovery and no receiver interaction. Any native correction is a separate reviewed/tested change, not a reason to rebuild Rust for visual work. A Playing badge must describe playback only; it must not imply that controller reachability has been verified. Layout work can proceed while hardware diagnosis is pending, but does not close R0.
 
 ## Source audit and implementation map
 
@@ -58,13 +64,14 @@ Optional element movement can translate the safe content group by 1–3 effectiv
 
 | Slice | Changes | Verification and acceptance | Effort |
 | --- | --- | --- | --- |
+| R0: remote-control continuity | Diagnose and correct the controller-lock regression using the reopened stability investigation. Preserve active account and Spotify queue/control ownership. | Owner/guest controller lock/unlock, remote transport/volume/seek/queue commands, Lumia on/off and controller-only recovery; audio continuing alone is insufficient. | Unknown until correlated trace; first functional priority |
 | U0: baseline and layout | Confirm current appearance, usable view size/scaling, shell/back, art resolution and memory. Define XAML tokens and portrait/landscape arrangements with representative metadata. | Existing player remains reachable; review actual layouts on Lumia with short/long titles and no art. Record baseline memory and navigation behavior. | Small |
 | U1: useful Hi-Fi screen | Shared opt-in view, large cover, title/artist/album, progress, transport, volume, honest status, back route. No persistent display or animation yet. | Local presentation/layout/command tests plus ARM build; owner and guest songs, rapid skips, seek, volume, rotate, enter/exit during playback; no playback or lock-screen regression. | Medium; first installable slice |
 | U2: artwork quality and transitions | Cancellable image loader, decode sizing, fallback, optional bounded cache and short transitions. | Delayed A/B completion, broken image, offline, navigate-away, rapid skip and memory-pressure tests; no wrong-cover publication and no unbounded decoded images. | Medium |
 | U3: optional appliance display | Fullscreen restoration, explicit persistent-display preference, visual dimming and optional movement. | Balanced display request ownership, manual lock respected, first tap wakes only, Back exits, timers stop in background; verify on battery/charger. | Medium |
 | U4: qualification and default decision | Tune spacing/contrast/resources from device evidence; assess whether to promote the view. | Two-hour visible playback, repeated owner/guest transfers, screen lock/unlock and navigation. No audible regression or sustained memory growth; compare power/heat observations with baseline. | Small code, elapsed test time |
 
-Implement U1 before U2/U3 polish. Share only logic genuinely required by the new screen; avoid a general UI framework refactor. All three old appearance modes remain usable. Do not make the new screen the default until physical acceptance; an opt-in screen can ship first.
+Resolve R0 before acceptance of the next combined candidate; implement U1 before U2/U3 polish. Share only logic genuinely required by the new screen; avoid a general UI framework refactor. All three old appearance modes remain usable. Do not make the new screen the default until physical acceptance; an opt-in screen can ship first.
 
 ## Test and release strategy
 
@@ -78,9 +85,9 @@ For performance, record baseline and candidate memory before/after 100 track cha
 
 ## Completion and handoff
 
-Goal 2 is complete when artwork, text, controls and states meet the intended layouts on the Lumia; family playback and background/lock controls still work; image and display lifetimes are bounded; optional display preferences restore correctly; and the physical qualification results are recorded. A desktop screenshot alone is insufficient.
+Goal 2 is complete when artwork, text, controls and states meet the intended layouts on the Lumia; family playback and background/lock controls still work; remote control survives controller lock as required by R0; image and display lifetimes are bounded; optional display preferences restore correctly; and the physical qualification results are recorded. A desktop screenshot alone is insufficient.
 
-Start the next session with AGENTS.md, this plan, STABILITY_PLAN.md closure, NavigationHelper, MainPage, the three existing player pages, MediaState, ImageUriHelper and the playback tests. Confirm the real Lumia appearance route, then implement U1 behind the opt-in. No design decision is blocking this plan: proceed with black/ivory/amber, shared presentation and conservative default-off display options. User feedback can tune styling after the first device preview.
+Start the next session with AGENTS.md, this plan and the reopened R0 section of STABILITY_PLAN.md. Diagnose the controller-lock failure before accepting a new candidate. For UI work inspect NavigationHelper, MainPage, the three existing player pages, MediaState, ImageUriHelper and the playback tests; confirm the real Lumia appearance route, then implement U1 behind the opt-in. No design decision is blocking this plan: proceed with black/ivory/amber, shared presentation and conservative default-off display options. User feedback can tune styling after the first device preview.
 
 ## Platform references
 

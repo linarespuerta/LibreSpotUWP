@@ -1,6 +1,6 @@
 # Lumia HiFi roadmap
 
-The current Goal 5 delivery is closed after user-reported functional acceptance of 1.0.15.0; see [STABILITY_PLAN.md](STABILITY_PLAN.md) for delivered corrections and deferred hardware/soak qualification. This does not establish locked idle discovery or completion of the entire physical matrix. The next workstream is Goal 2, detailed in [HIFI_UI_PLAN.md](HIFI_UI_PLAN.md).
+Goal 5 is reopened after a new 1.0.15.0 report: locking the controller phone loses remote control while the Lumia keeps playing. R0 diagnosis/correction and owner/guest controller-lock acceptance are the first functional priority of the next delivery; see [STABILITY_PLAN.md](STABILITY_PLAN.md). Goal 2 remains planned in [HIFI_UI_PLAN.md](HIFI_UI_PLAN.md), with R0 required before accepting the combined UI candidate. Locked idle discovery and long-run qualification remain separate pending checks.
 
 ## M0 — Reproducible baseline
 
