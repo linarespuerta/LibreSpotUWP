@@ -1,5 +1,15 @@
 # Test plan
 
+## Review follow-up: network ownership across queues/startup
+
+- Portable playback suite: PASS, including `ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness`. ACK-only, old Windows Playing state, pre-roll-only, obsolete startup versions and pre-readiness PCM cannot release startup. A post-readiness sample plus Windows Playing completes it; pause/close cancel it.
+- DealerTransportProbe: PASS (2). Imports the actual bridge and `leased_stream.rs`; checks synchronous queued-frame ownership, malformed JSON, rejected backlog, cancellation, asynchronous typed subscriber handling, release on Pending, and subscription drop.
+- DealerLivenessProbe: PASS (2); existing retry/cancellation behavior remains covered.
+- Final native ARM32 UWP release build: PASS at `f51b24e`; PE ARM32/AppContainer and all 53 managed imports verified. Local DLL SHA-256: `43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`. Reverse-apply check for the tracked follow-up patch: PASS.
+- Managed solution ARM Release build: PASS with `/t:Build /p:AppxPackage=false /p:GenerateAppxPackageOnBuild=false /p:UseDotNetNativeToolchain=false`. This validates the UWP/XAML compilation, not .NET Native packaging or hardware behavior. Do not invoke `/t:Compile` directly: it bypasses XAML generation and reports misleading missing generated control names.
+- No follow-up APPX has been generated. The signed 1.0.16.0 artifact below is unchanged and does not contain these fixes. Locked uncached startup, PCM delivery, hardware-slot allocation and long-run control still require the Lumia.
+- For the next device package, increment the manifest version (next candidate: 1.0.17.0), include the matching native DLL and rerun .NET Native/signature/content verification. Do not replace the contents of the already-issued 1.0.16.0 identity/version.
+
 ## 2026-10-18 — Background control/real PCM candidate
 
 - Portable playback suite: PASS, including PCM frame/timestamp/boundary/overrun tests, bounded control work and stored-reply completion, and source wiring checks. Existing account, recovery, transition and cancellation cases pass. Login Helper sibling source audit: SKIP (checkout absent).

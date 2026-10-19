@@ -25,12 +25,38 @@ impl DealerShared {
 }
 #[path = "../../../../librespot-upstream/core/src/dealer/uwp_transport.rs"]
 mod transport;
+#[path = "../../../../librespot-upstream/core/src/dealer/leased_stream.rs"]
+mod leased_stream;
+
+#[tokio::test]
+async fn production_subscriber_keeps_lease_through_handling_then_releases_on_pending_or_drop() {
+    use futures_util::StreamExt;
+    struct Lease(Arc<AtomicUsize>);
+    impl Drop for Lease { fn drop(&mut self) { self.0.fetch_add(1, Ordering::SeqCst); } }
+    let released = Arc::new(AtomicUsize::new(0));
+    let lease = Arc::new(Lease(released.clone()));
+    let input = futures_util::stream::iter(vec![lease]).chain(futures_util::stream::pending());
+    let output = leased_stream::retaining_map(input, |_| 42, Arc::clone);
+    let mut output = Box::pin(output);
+    assert_eq!(output.next().await, Some(42));
+    tokio::task::yield_now().await; // simulated async subscriber handler
+    assert_eq!(released.load(Ordering::SeqCst), 0, "typed conversion dropped the message lease before handling");
+    assert!(tokio::time::timeout(Duration::from_millis(10), output.next()).await.is_err());
+    assert_eq!(released.load(Ordering::SeqCst), 1, "Pending poll retained an already handled message");
+
+    let input = futures_util::stream::iter(vec![Arc::new(Lease(released.clone()))]);
+    let mut output = Box::pin(leased_stream::retaining_map(input, |_| (), Arc::clone));
+    output.next().await.unwrap();
+    drop(output);
+    assert_eq!(released.load(Ordering::SeqCst), 2, "subscription cancellation leaked its last lease");
+}
 
 static OPEN_ALLOWED: AtomicBool = AtomicBool::new(true);
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
 static SENT: AtomicUsize = AtomicUsize::new(0);
 static CLOSED: AtomicUsize = AtomicUsize::new(0);
 static ACTIVITY: AtomicUsize = AtomicUsize::new(0);
+static ACTIVE_WORK: AtomicUsize = AtomicUsize::new(0);
 extern "C" fn open(id: u64, _: *const std::ffi::c_char) -> bool {
     LAST_ID.store(id, Ordering::SeqCst);
     if !OPEN_ALLOWED.load(Ordering::SeqCst) { return false; }
@@ -41,7 +67,11 @@ extern "C" fn close(id: u64) {
     CLOSED.fetch_add(1, Ordering::SeqCst);
     unsafe { transport::push(id, 0, std::ptr::null(), 0); }
 }
-extern "C" fn activity(_: u64, _: u32, _: bool) { ACTIVITY.fetch_add(1, Ordering::SeqCst); }
+extern "C" fn activity(_: u64, _: u32, active: bool) {
+    ACTIVITY.fetch_add(1, Ordering::SeqCst);
+    if active { ACTIVE_WORK.fetch_add(1, Ordering::SeqCst); }
+    else { ACTIVE_WORK.fetch_sub(1, Ordering::SeqCst); }
+}
 fn shared() -> Arc<DealerShared> { Arc::new(DealerShared { uwp_id: AtomicU64::new(0), closed: Semaphore::new(0), received: AtomicUsize::new(0) }) }
 
 #[tokio::test]
@@ -65,15 +95,24 @@ async fn production_bridge_bounds_frames_dispatches_replies_and_isolates_connect
     assert!(!unsafe { transport::push(a, 2, text.as_ptr(), 2 * 1024 * 1024 + 1) });
     assert!(!unsafe { transport::push(a, 2, [255u8].as_ptr(), 1) });
     for _ in 0..16 { assert!(unsafe { transport::push(a, 2, text.as_ptr(), text.len()) }); }
+    assert_eq!(ACTIVE_WORK.load(Ordering::SeqCst), 16, "enqueue returned before acquiring frame wake leases");
     assert!(!unsafe { transport::push(a, 2, text.as_ptr(), text.len()) }, "inbound queue grew beyond its frame budget");
     for _ in 0..20 { tokio::task::yield_now().await; }
     assert_eq!(owner.received.load(Ordering::SeqCst), 16);
     assert!(SENT.load(Ordering::SeqCst) >= 16, "native protocol replies never reached the host callback");
+    assert_eq!(ACTIVE_WORK.load(Ordering::SeqCst), 0, "dispatch or rejected backlog leaked frame leases");
+    let before = ACTIVITY.load(Ordering::SeqCst);
     {
         let _scope = transport::network_activity(a, 3).unwrap();
-        assert_eq!(ACTIVITY.load(Ordering::SeqCst), 1);
+        assert_eq!(ACTIVITY.load(Ordering::SeqCst), before + 1);
     }
-    assert_eq!(ACTIVITY.load(Ordering::SeqCst), 2, "native work did not balance its wake ownership");
+    assert_eq!(ACTIVITY.load(Ordering::SeqCst), before + 2, "native work did not balance its wake ownership");
+
+    let invalid_json = b"not-json";
+    assert!(unsafe { transport::push(a, 2, invalid_json.as_ptr(), invalid_json.len()) });
+    for _ in 0..10 { tokio::task::yield_now().await; }
+    assert_eq!(ACTIVE_WORK.load(Ordering::SeqCst), 0, "parse failure leaked frame work");
+    assert!(unsafe { transport::push(a, 2, text.as_ptr(), text.len()) });
 
     owner.closed.close();
     tokio::time::timeout(Duration::from_secs(1), async { send_a.await.unwrap(); receive_a.await.unwrap(); }).await.unwrap();
@@ -84,4 +123,5 @@ async fn production_bridge_bounds_frames_dispatches_replies_and_isolates_connect
     guest.closed.close();
     tokio::time::timeout(Duration::from_secs(1), async { send_b.await.unwrap(); receive_b.await.unwrap(); }).await.unwrap();
     assert!(CLOSED.load(Ordering::SeqCst) >= 3);
+    assert_eq!(ACTIVE_WORK.load(Ordering::SeqCst), 0);
 }

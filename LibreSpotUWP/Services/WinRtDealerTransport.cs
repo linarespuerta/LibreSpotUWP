@@ -27,6 +27,23 @@ namespace LibreSpotUWP.Services
         private static Task<BackgroundAccessStatus> _access;
         private static int _installed;
         private static long _latestOpened;
+        private static long _startupVersion;
+        public static long StartupVersion => Interlocked.Read(ref _startupVersion);
+        public static void PlaybackReady(long version, bool platformPlaying)
+        {
+            if (Channels.TryGetValue(unchecked((ulong)Interlocked.Read(ref _latestOpened)), out var channel))
+                channel.PlaybackReady(version, platformPlaying);
+        }
+        public static void PlatformPlaybackChanged(bool playing)
+        {
+            if (Channels.TryGetValue(unchecked((ulong)Interlocked.Read(ref _latestOpened)), out var channel))
+                channel.PlatformPlaybackChanged(playing);
+        }
+        public static void PcmDelivered(long version)
+        {
+            if (Channels.TryGetValue(unchecked((ulong)Interlocked.Read(ref _latestOpened)), out var channel))
+                channel.PcmDelivered(version);
+        }
         public static event Action ConnectionLost;
 
         public static void Install()
@@ -202,6 +219,12 @@ namespace LibreSpotUWP.Services
 
             public void Activity(uint kind, bool active)
             {
+                if (kind == 6)
+                {
+                    if (active) _work.BeginStartup(Interlocked.Increment(ref _startupVersion));
+                    else _work.CancelStartup();
+                    return;
+                }
                 if (active) _work.Begin();
                 else
                 {
@@ -209,6 +232,10 @@ namespace LibreSpotUWP.Services
                     if (kind == 3) _work.RegistrationCompleted();
                 }
             }
+
+            public void PlaybackReady(long version, bool platformPlaying) => _work.PlaybackReady(version, platformPlaying);
+            public void PlatformPlaybackChanged(bool playing) => _work.PlatformPlaybackChanged(playing);
+            public void PcmDelivered(long version) => _work.PcmDelivered(version);
 
             public bool Send(byte[] data)
             {

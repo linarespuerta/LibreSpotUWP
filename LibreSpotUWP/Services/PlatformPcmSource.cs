@@ -88,6 +88,7 @@ namespace LibreSpotUWP.Services
                     if (await Task.WhenAny(enabled, _cancelled).ConfigureAwait(false) != enabled)
                         break;
                     _lifetime.Token.ThrowIfCancellationRequested();
+                    var startupVersion = WinRtDealerTransport.StartupVersion;
                     var data = _read(_sampleBytes);
                     if (data != null && data.Length != 0)
                     {
@@ -100,6 +101,7 @@ namespace LibreSpotUWP.Services
                         // never from the old synthetic 24-hour silent source.
                         sender.SetBufferedRange(start, _timeline.BufferedEnd(_available()));
                         args.Request.Sample = sample;
+                        WinRtDealerTransport.PcmDelivered(startupVersion);
                         return;
                     }
                     args.Request.ReportSampleProgress(0);

@@ -1469,6 +1469,9 @@ namespace LibreSpotUWP.Services
 
         private void OnMediaPlayerPlaybackStateChanged(MediaPlaybackSession sender, object args)
         {
+            WinRtDealerTransport.PlatformPlaybackChanged(
+                sender.PlaybackState == MediaPlaybackState.Playing &&
+                Volatile.Read(ref _playbackRequested) != 0 && IsSelectedSpotifyConnectDeviceLocal);
             LogService.Telemetry(
                 "media-player-state:" + sender.PlaybackState,
                 $"Background media player state changed to {sender.PlaybackState}; playback={Current.PlaybackState}, sessionGeneration={_librespot.SessionGeneration}.");
@@ -2979,6 +2982,7 @@ namespace LibreSpotUWP.Services
                         var playbackReady = _ringPlayer.RequestPlaybackAsync(
                             playbackEvent.PlayRequestId,
                             playbackEvent.AudioGeneration);
+                        var startupVersion = WinRtDealerTransport.StartupVersion;
                         // Rejected/stale requests complete synchronously. Arm only accepted
                         // playback, before waiting for PCM pre-roll during the first lock.
                         if (!playbackReady.IsCompleted || await playbackReady)
@@ -3002,6 +3006,8 @@ namespace LibreSpotUWP.Services
                         if (_mediaPlayer.PlaybackSession.PlaybackState != MediaPlaybackState.Playing)
                             _mediaPlayer.Play();
 
+                        WinRtDealerTransport.PlaybackReady(startupVersion,
+                            _mediaPlayer.PlaybackSession.PlaybackState == MediaPlaybackState.Playing);
                         LogService.Info($"[MediaService.OnPlaybackChanged] Playback published after pre-roll for {_state.Track?.Uri ?? "(unknown)"}, generation={playbackEvent.AudioGeneration}, request={playbackEvent.PlayRequestId}.");
                         _smtc.PlaybackStatus = MediaPlaybackStatus.Playing;
                         TryCompleteOnlineQueueRecovery(_state.Track?.Uri);

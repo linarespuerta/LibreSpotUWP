@@ -1,0 +1,207 @@
+diff --git a/connect/src/spirc.rs b/connect/src/spirc.rs
+index b5f9b09..b897dc3 100644
+--- a/connect/src/spirc.rs
++++ b/connect/src/spirc.rs
+@@ -1394,6 +1394,8 @@ impl SpircTask {
+     }
+ 
+     fn handle_stop(&mut self) {
++        #[cfg(target_os = "windows")]
++        self.session.dealer().playback_starting(false);
+         self.player.stop();
+         self.connect_state.update_position(0, self.now_ms());
+         self.connect_state.clear_next_tracks();
+@@ -1614,6 +1616,10 @@ impl SpircTask {
+     }
+ 
+     fn handle_play(&mut self) {
++        #[cfg(target_os = "windows")]
++        if matches!(self.play_status, SpircPlayStatus::Paused { .. } | SpircPlayStatus::LoadingPause { .. }) {
++            self.session.dealer().playback_starting(true);
++        }
+         match self.play_status {
+             SpircPlayStatus::Paused {
+                 position_ms,
+@@ -1653,6 +1659,8 @@ impl SpircTask {
+     }
+ 
+     fn handle_pause(&mut self) {
++        #[cfg(target_os = "windows")]
++        self.session.dealer().playback_starting(false);
+         match self.play_status {
+             SpircPlayStatus::Playing {
+                 nominal_start_time,
+@@ -1994,6 +2002,8 @@ impl SpircTask {
+ 
+         let current_uri = self.connect_state.current_track(|t| &t.uri);
+         let id = SpotifyUri::from_uri(current_uri)?;
++        #[cfg(target_os = "windows")]
++        self.session.dealer().playback_starting(start_playing);
+         self.player.load(id, start_playing, position_ms);
+ 
+         self.connect_state
+diff --git a/core/src/dealer/leased_stream.rs b/core/src/dealer/leased_stream.rs
+new file mode 100644
+index 0000000..34b1c10
+--- /dev/null
++++ b/core/src/dealer/leased_stream.rs
+@@ -0,0 +1,27 @@
++//! Hold a queued message's lease until its consumer polls again or drops.
++use futures_core::Stream;
++use std::task::Poll;
++
++pub(crate) fn retaining_map<S, F, L, T, G>(stream: S, mut map: F, mut lease: L)
++    -> impl Stream<Item = T> + Send
++where
++    S: Stream + Send,
++    F: FnMut(S::Item) -> T + Send,
++    L: FnMut(&S::Item) -> G + Send,
++    G: Send,
++{
++    let mut stream = Box::pin(stream);
++    let mut previous = None;
++    futures_util::stream::poll_fn(move |cx| {
++        // Also release on Pending, not only when another message arrives.
++        previous.take();
++        match stream.as_mut().poll_next(cx) {
++            Poll::Ready(Some(message)) => {
++                previous = Some(lease(&message));
++                Poll::Ready(Some(map(message)))
++            }
++            Poll::Ready(None) => Poll::Ready(None),
++            Poll::Pending => Poll::Pending,
++        }
++    })
++}
+diff --git a/core/src/dealer/manager.rs b/core/src/dealer/manager.rs
+index 7c08f1b..166cce3 100644
+--- a/core/src/dealer/manager.rs
++++ b/core/src/dealer/manager.rs
+@@ -1,4 +1,5 @@
+ use futures_core::Stream;
++#[cfg(not(target_os = "windows"))]
+ use futures_util::StreamExt;
+ use std::{pin::Pin, str::FromStr, sync::OnceLock};
+ use thiserror::Error;
+@@ -91,6 +92,12 @@ impl DealerManager {
+             dealer.shared.uwp_id.load(std::sync::atomic::Ordering::Acquire))).unwrap_or(0);
+         super::uwp_transport::network_activity(id, kind)
+     }
++    #[cfg(target_os = "windows")]
++    pub fn playback_starting(&self, starting: bool) {
++        let id = self.lock(|inner| inner.dealer.get().map(|dealer|
++            dealer.shared.uwp_id.load(std::sync::atomic::Ordering::Acquire))).unwrap_or(0);
++        super::uwp_transport::playback_starting(id, starting);
++    }
+ 
+     async fn get_url(session: Session) -> GetUrlResult {
+         let (host, port) = session.apresolver().resolve("dealer").await?;
+@@ -113,12 +120,22 @@ impl DealerManager {
+         })
+     }
+ 
+-    pub fn listen_for<T>(
++    pub fn listen_for<T: 'static>(
+         &self,
+         uri: impl Into<String>,
+         t: impl Fn(Message) -> Result<T, Error> + Send + 'static,
+     ) -> Result<BoxedStreamResult<T>, Error> {
+-        Ok(Box::pin(self.add_listen_for(uri)?.map(t)))
++        let subscription = self.add_listen_for(uri)?;
++        #[cfg(target_os = "windows")]
++        {
++            // Retain the message lease through the caller's handling of the
++            // yielded value, not just through parsing. The next poll (or drop)
++            // releases it; clones in other subscribers keep their own share.
++            return Ok(Box::pin(super::leased_stream::retaining_map(
++                subscription, t, |message| message.network_activity.clone())));
++        }
++        #[cfg(not(target_os = "windows"))]
++        Ok(Box::pin(subscription.map(t)))
+     }
+ 
+     pub fn add_handle_for(&self, url: impl Into<String>) -> Result<RequestReceiver, Error> {
+diff --git a/core/src/dealer/mod.rs b/core/src/dealer/mod.rs
+index 9758d0b..ef92f97 100644
+--- a/core/src/dealer/mod.rs
++++ b/core/src/dealer/mod.rs
+@@ -1,4 +1,6 @@
+ pub mod manager;
++#[cfg(target_os = "windows")]
++mod leased_stream;
+ mod maps;
+ pub mod protocol;
+ #[cfg(target_os = "windows")]
+@@ -346,6 +348,9 @@ impl DealerShared {
+     fn dispatch_message(&self, mut msg: WebsocketMessage) {
+         let msg = match msg.handle_payload() {
+             Ok(value) => Message {
++                #[cfg(target_os = "windows")]
++                network_activity: uwp_transport::network_activity(
++                    self.uwp_id.load(atomic::Ordering::Acquire), 5).map(Arc::new),
+                 headers: msg.headers,
+                 payload: value,
+                 uri: msg.uri,
+diff --git a/core/src/dealer/protocol.rs b/core/src/dealer/protocol.rs
+index 803fe30..4c64271 100644
+--- a/core/src/dealer/protocol.rs
++++ b/core/src/dealer/protocol.rs
+@@ -93,6 +93,8 @@ pub enum PayloadValue {
+ 
+ #[derive(Clone, Debug)]
+ pub struct Message {
++    #[cfg(target_os = "windows")]
++    pub(crate) network_activity: Option<std::sync::Arc<super::uwp_transport::NetworkActivity>>,
+     pub headers: HashMap<String, String>,
+     pub payload: PayloadValue,
+     pub uri: String,
+diff --git a/core/src/dealer/uwp_transport.rs b/core/src/dealer/uwp_transport.rs
+index 19ad8d2..08127f6 100644
+--- a/core/src/dealer/uwp_transport.rs
++++ b/core/src/dealer/uwp_transport.rs
+@@ -16,15 +16,23 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+ const MAX_FRAME_BYTES: usize = 2 * 1024 * 1024;
+ struct Client {
+     ready: Option<oneshot::Sender<bool>>,
+-    frames: mpsc::Sender<String>,
++    frames: mpsc::Sender<Frame>,
+ }
++struct Frame { text: String, _activity: Option<NetworkActivity> }
+ static CLIENTS: OnceLock<Mutex<HashMap<u64, Client>>> = OnceLock::new();
+ fn clients() -> &'static Mutex<HashMap<u64, Client>> { CLIENTS.get_or_init(|| Mutex::new(HashMap::new())) }
+ 
+ pub fn register(callbacks: Callbacks) { *CALLBACKS.write().expect("transport callback lock") = Some(callbacks); }
+ pub fn is_registered() -> bool { CALLBACKS.read().expect("transport callback lock").is_some() }
+ 
++#[derive(Debug)]
+ pub struct NetworkActivity { id: u64, kind: u32, callback: ActivityCallback }
++pub fn playback_starting(id: u64, starting: bool) {
++    if id == 0 { return; }
++    if let Some(callbacks) = *CALLBACKS.read().expect("transport callback lock") {
++        (callbacks.activity)(id, 6, starting);
++    }
++}
+ pub fn network_activity(id: u64, kind: u32) -> Option<NetworkActivity> {
+     let callbacks = *CALLBACKS.read().expect("transport callback lock");
+     callbacks.filter(|_| id != 0).map(|callbacks| {
+@@ -42,7 +50,10 @@ pub unsafe fn push(id: u64, kind: u32, data: *const u8, length: usize) -> bool {
+     if kind == 1 { if let Some(ready) = client.ready.take() { return ready.send(true).is_ok(); } return true; }
+     if kind != 2 || data.is_null() || length > MAX_FRAME_BYTES { return false; }
+     let Ok(text) = std::str::from_utf8(unsafe { std::slice::from_raw_parts(data, length) }) else { return false; };
+-    client.frames.try_send(text.to_owned()).is_ok()
++    // Acquire synchronously before returning to MessageReceived. Ownership
++    // survives the queue, dispatch, parse failures and cancellation.
++    let frame = Frame { text: text.to_owned(), _activity: network_activity(id, 4) };
++    client.frames.try_send(frame).is_ok()
+ }
+ 
+ struct Lease { id: u64, callbacks: Callbacks }
+@@ -95,7 +106,7 @@ pub(super) async fn connect(address: &Url, shared: &Arc<DealerShared>) -> WsResu
+             select! {
+                 () = incoming_shared.closed() => break,
+                 text = frame_rx.recv() => match text {
+-                    Some(text) => match serde_json::from_str(&text) {
++                    Some(frame) => match serde_json::from_str(&frame.text) {
+                         Ok(message) => incoming_shared.dispatch(message, &send_tx),
+                         Err(_) => warn!("Invalid Dealer frame from WinRT transport"),
+                     },

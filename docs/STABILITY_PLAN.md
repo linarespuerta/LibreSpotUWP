@@ -394,6 +394,19 @@ Status: implemented and covered by host tests; **physical Lumia acceptance remai
 5. Test Wi-Fi loss/return and foreground return: bounded reconnect, no duplicate renderer, no stale owner takeover, no unexpected autoplay after Pause. Run a 60-minute locked soak and compare memory/task/socket counts.
 6. Correlate redacted logs with controller timestamps. Failure criteria include socket allocation rejection, OS network-unreachable errors, lost replies, independent sessions, or stopping at track end. Keep 1.0.15.0 available for rollback.
 
-### Explicit remaining boundary
+### Review follow-up: queued messages and asynchronous startup
+
+The 1.0.16.0 package predates these corrections. Do not use that existing APPX as evidence that the follow-up is installed.
+
+Native source: local HEAD `f51b24e882f69ffdf91f95c05885222577eb7e7b` (implementation `6245f2a` plus the retained-result lifetime constraint); reproducible follow-up delta: `native-patches/0002-uwp-network-work-lifetime.patch` applied after `0001`. No push to the third-party native origin.
+
+- Every accepted text frame now acquires native network-work ownership synchronously inside the FFI enqueue call. RAII retains it through the receive queue and dispatch; malformed JSON, rejected backlog and cancellation release it. Non-request messages no longer depend on a reply key to protect their dispatch.
+- Typed Dealer subscriptions retain a shared message lease across parsing and the consumer's asynchronous handling, until the next poll or subscription disposal. Releasing it only inside a `.map()` parser would still leave a gap before SPIRC handles the result. A Pending poll also releases the previous lease, so an idle subscription cannot hold a wake forever.
+- Native load/resume signals a separate startup lease **before** enqueuing player work. An ACK or completed state publication does not release it. Accepted current-generation pre-roll readiness, Windows `Playing`, and a real PCM sample submitted after readiness are all required. Startup versions reject obsolete readiness; repeated loads share the pending waiter rather than stranding it. Pause/Stop, channel disposal and the existing bounded wake deadline cancel startup ownership.
+- No credential/account switch, default-backend change, new FFI export or discovery-policy change is introduced. The paired native and managed changes must ship together.
+
+Regression checks cover queued work, subscriber handling/Pending/drop, malformed input, backlog rejection, cancellation, ACK-before-audio, stale readiness, Windows-state-before-PCM and interrupted startup. Physical acceptance must additionally start a different uncached track while the Lumia is locked and paused; verify actual sound, remote authority and the next natural boundary. A host simulation cannot establish Connected Standby behavior.
+
+### Unchanged discovery boundary
 
 This implements authenticated control/background playback, **not brokered idle fresh-account Zeroconf discovery**. Native mDNS/TCP listeners remain unchanged. New-account discovery while locked and idle is a separate acceptance item and may require a supported listener-broker design; do not infer it from Dealer wake success. The actual WinRT API/firmware behavior, audio quality and all lock/soak results remain unverified until measured on the Lumia.

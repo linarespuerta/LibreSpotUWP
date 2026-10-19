@@ -43,6 +43,7 @@ internal static class Program
             PlatformPcmRejectsOverrunAndInvalidFormats,
             ControlWakeWaitsForNativeWorkAndStoredReply,
             ControlWakeCancellationAndBacklogAreBounded,
+            ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness,
             PlatformMediaWiringUsesRealPcmAndScopedNetworkWork,
             RepetitiveTelemetryProducesOneSinkEntry,
             PlaybackEventStormCreatesOnePendingDispatcherItem,
@@ -953,6 +954,51 @@ internal static class Program
             "closed channel retained work or accepted a late-session reply");
     }
 
+    private static void ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness()
+    {
+        var work = new ControlWorkTracker();
+        work.RegistrationCompleted();
+        work.BeginStartup(1);
+        work.TrackReply("play");
+        work.ReplyStored("play");
+        Assert(!work.IsIdle, "ACK released playback before PCM was ready");
+        work.PlatformPlaybackChanged(true);
+        Assert(!work.IsIdle, "old platform Playing state released a new load");
+        work.PcmDelivered(1);
+        work.PlaybackReady(1, false);
+        Assert(!work.IsIdle, "PCM pre-roll released work before Windows started");
+        work.PlatformPlaybackChanged(true);
+        Assert(!work.IsIdle, "Windows state released startup before a ready-generation sample");
+        work.PcmDelivered(1);
+        Assert(work.IsIdle, "actual Windows playback failed to complete startup");
+        work.BeginStartup(10);
+        work.PlaybackReady(10, true);
+        work.PlatformPlaybackChanged(false); // Windows entered buffering again
+        work.PcmDelivered(10);
+        Assert(!work.IsIdle, "a buffered sample released startup while Windows was not Playing");
+        work.PlatformPlaybackChanged(true);
+        Assert(work.IsIdle, "Windows Playing did not finish an already submitted PCM sample");
+        work.BeginStartup(2);
+        var pending = work.Pending;
+        work.BeginStartup(3);
+        work.PlaybackReady(2, true);
+        Assert(!work.IsIdle && !pending.IsCompleted, "stale track readiness completed replacement startup");
+        work.PlaybackReady(3, true);
+        work.PcmDelivered(2);
+        Assert(!work.IsIdle, "obsolete PCM finished the replacement startup");
+        work.PcmDelivered(3);
+        pending.GetAwaiter().GetResult();
+        Assert(work.IsIdle && pending.IsCompleted, "replacement startup stranded the original waiter");
+        work.BeginStartup(4);
+        work.CancelStartup();
+        Assert(work.IsIdle, "pause/stop did not release startup");
+        work.BeginStartup(5);
+        pending = work.Pending;
+        work.Close();
+        pending.GetAwaiter().GetResult();
+        Assert(work.IsIdle && pending.IsCompleted, "channel cancellation stranded playback startup");
+    }
+
     private static void PlatformMediaWiringUsesRealPcmAndScopedNetworkWork()
     {
         var root = FindRepositoryRoot();
@@ -973,6 +1019,13 @@ internal static class Program
                transport.Contains("_work.Pending") && transport.Contains("_work.ReplyStored(key)") &&
                transport.Contains("_pushTask?.Unregister(true)") && transport.Contains("Push(id, 0)"),
             "control transport is not bound to actual scoped background network/reply lifetime");
+        var media = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "MediaService.cs"));
+        var patch = File.ReadAllText(Path.Combine(root, "native-patches", "0002-uwp-network-work-lifetime.patch"));
+        Assert(transport.Contains("if (kind == 6)") && transport.Contains("_work.BeginStartup") &&
+               media.Contains("WinRtDealerTransport.PlaybackReady(startupVersion,") &&
+               source.Contains("WinRtDealerTransport.PcmDelivered(startupVersion)") &&
+               patch.Contains("playback_starting(start_playing)") && patch.Contains("playback_starting(false)"),
+            "native load/pause and accepted PCM startup are not wired through the paired bridge");
         foreach (var theme in new[] { "Win10_1507", "Win10_1709", "Win11" })
         {
             var xaml = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Views", theme, "SettingsPage_" + theme + ".xaml"));
