@@ -8,6 +8,12 @@
 - Native ARM release build: PASS with existing UWP target/features and SDK binding patches. All **53** managed FFI imports exported; PE ARM32/AppContainer verified.
 - DLL SHA-256: `BECC14EC3F82D3B21ECA132216CC2824DB806146A3B130DE4BE7B58D296AC294`.
 - Physical acceptance is the matrix in STABILITY_PLAN.md. Host simulations are not evidence that ControlChannelTrigger hardware slots or locked wake work on this Lumia. Idle fresh-account discovery remains separate.
+
+### Package verification
+
+Release ARM/.NET Native packaging passed for source commit `74486ea`. Artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.16.0_ARM_Test/LibreSpotUWP_1.0.16.0_ARM.appx`. SHA-256: `519963B1AB61F556B25381B27C643786C73AC5A5D9C72CC66484F4EB9E1BDD52`.
+
+Verified unchanged package identity/publisher, version `1.0.16.0`, architecture `arm`, and resolved keepalive extension executable `LibreSpotUWP.exe`. Embedded DLL matches the hash above. PKCS#7 cryptographic signature verification passed with the existing development signer `D12D4AD769E2DE1F8F0C82E58DD6533165658455`; this does not claim a publicly trusted production certificate. MakeAppx extraction passed. Temporary signing PFX was removed after the build. The prior 1.0.15.0 APPX is retained. No deployment or physical lock-screen acceptance was performed by this build.
 The local/desktop boundary is documented in [LOCAL_TESTING.md](LOCAL_TESTING.md). Desktop results must not be reported as Lumia hardware acceptance.
 
 ## Automated and static checks
