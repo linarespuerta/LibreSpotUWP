@@ -446,3 +446,15 @@ Regression checks cover queued work, subscriber handling/Pending/drop, malformed
 ### Unchanged discovery boundary
 
 This implements authenticated control/background playback, **not brokered idle fresh-account Zeroconf discovery**. Native mDNS/TCP listeners remain unchanged. New-account discovery while locked and idle is a separate acceptance item and may require a supported listener-broker design; do not infer it from Dealer wake success. The actual WinRT API/firmware behavior, audio quality and all lock/soak results remain unverified until measured on the Lumia.
+
+### 1.0.21: fix rejected Dealer trigger configuration
+
+The 1.0.20 device trace showed repeated `open-HRESULT-0x80070057` failures before authenticated Dealer registration. The transport supplied **1 minute** to `ControlChannelTrigger`; Microsoft's constructor contract requires **15..1439 minutes**. The renderer had completed initialization. Account metadata/lyrics following the controller was not evidence of an established Connect playback session.
+
+The production constructor now uses a shared, regression-tested **15-minute** constant. This is the OS maintenance interval, not a delay before processing incoming commands. Keep the hardware-slot requirement on Mobile; do not silently fall back to an unprotected socket. See [Microsoft's constructor contract](https://learn.microsoft.com/en-us/uwp/api/windows.networking.sockets.controlchanneltrigger.-ctor).
+
+Open failures now identify background access, trigger creation, push registration, keepalive registration, transport association, socket connection or push enablement, with HRESULT and configuration/runtime classification only (no endpoint/token). Cancellation after channel disposal is not reported as a fresh failure. Native retry behavior is unchanged: classification is diagnostic, **not** a permanent-error circuit breaker. This focused package removes the confirmed invalid constructor input; it does not claim all future configuration failures stop native retries.
+
+Review: verified UInt32 minutes and channel-ID length contract, registration-before-connect ordering, preservation of Mobile hardware allocation checks, cancellation ownership and latest-channel notification guard. No native ABI, credential handling, audio format, discovery default or DLL change. Local regression tests include the production interval, invalid-argument/access-denied classification and production wiring; XAML URI self-test passes. Login Helper source audit remains skipped because its sibling checkout is absent.
+
+Physical acceptance remains open: install 1.0.21, restart the app with Windows streaming selected, confirm `Dealer control channel ready` with `HardwareSlotAllocated`, transfer actual sound, then test remote controls and multiple natural track boundaries with both devices locked. Confirm discovery separately. Do not close stability until those checks and the locked soak pass; OS maintenance alone does not prove Spotify service liveness.

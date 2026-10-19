@@ -10,6 +10,7 @@
     <Compile Include="..\..\LibreSpotUWP\Services\AudioTransitionStateMachine.cs" Link="AudioTransitionStateMachine.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\PcmStreamTimeline.cs" Link="PcmStreamTimeline.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\ControlWorkTracker.cs" Link="ControlWorkTracker.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\DealerChannelPolicy.cs" Link="DealerChannelPolicy.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\BackendStartupTrace.cs" Link="BackendStartupTrace.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\PlatformAudioOutputPolicy.cs" Link="PlatformAudioOutputPolicy.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\PlaybackPositionSynchronizer.cs" Link="PlaybackPositionSynchronizer.cs" />

@@ -146,6 +146,7 @@ namespace LibreSpotUWP.Services
 
             public async Task OpenAsync(Uri endpoint)
             {
+                var stage = "background-access";
                 try
                 {
                     var access = await _access.ConfigureAwait(false);
@@ -156,10 +157,13 @@ namespace LibreSpotUWP.Services
                     lock (_resources)
                     {
                         _closed.Token.ThrowIfCancellationRequested();
-                        _trigger = new ControlChannelTrigger(name, 1, ControlChannelTriggerResourceType.RequestHardwareSlot);
+                        stage = "trigger-create";
+                        _trigger = new ControlChannelTrigger(name, DealerChannelPolicy.KeepAliveIntervalMinutes, ControlChannelTriggerResourceType.RequestHardwareSlot);
+                        stage = "push-register";
                         var push = new BackgroundTaskBuilder { Name = name + ".Push", IsNetworkRequested = true };
                         push.SetTrigger(_trigger.PushNotificationTrigger);
                         _pushTask = push.Register();
+                        stage = "keepalive-register";
                         var keepAlive = new BackgroundTaskBuilder
                         {
                             Name = name + ".KeepAlive", IsNetworkRequested = true,
@@ -167,14 +171,17 @@ namespace LibreSpotUWP.Services
                         };
                         keepAlive.SetTrigger(_trigger.KeepAliveTrigger);
                         _keepAliveTask = keepAlive.Register();
+                        stage = "transport-associate";
                         _trigger.UsingTransport(_socket);
                     }
+                    stage = "websocket-connect";
                     using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(_closed.Token))
                     {
                         timeout.CancelAfter(TimeSpan.FromSeconds(15));
                         await _socket.ConnectAsync(endpoint).AsTask(timeout.Token).ConfigureAwait(false);
                     }
                     ControlChannelTriggerStatus status;
+                    stage = "push-enable";
                     lock (_resources)
                     {
                         _closed.Token.ThrowIfCancellationRequested();
@@ -191,7 +198,12 @@ namespace LibreSpotUWP.Services
                     LogService.Info($"Dealer control channel ready; channel={_id}, slot={status}.");
                     if (!Push(_id, 1)) Fail("native-open-rejected");
                 }
-                catch (Exception ex) { Fail($"open-HRESULT-0x{ex.HResult:X8}"); }
+                catch (OperationCanceledException) when (_closed.IsCancellationRequested) { }
+                catch (Exception ex)
+                {
+                    var category = DealerChannelPolicy.IsConfigurationFailure(ex.HResult) ? "configuration" : "runtime";
+                    Fail($"open-{stage}-{category}-HRESULT-0x{ex.HResult:X8}");
+                }
             }
 
             private void Received(MessageWebSocket sender, MessageWebSocketMessageReceivedEventArgs args)

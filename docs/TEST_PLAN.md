@@ -1,5 +1,15 @@
 # Test plan
 
+## Dealer constructor regression (1.0.21)
+
+- Generated ARM Release/.NET Native artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.21.0_ARM_Test/LibreSpotUWP_1.0.21.0_ARM.appx`, 11,331,168 bytes, SHA-256 `217343F4CBD03A313559C1B8271C15A11723120C797AA6D8A1E08E6864C8DC5C`.
+- Package verification: PASS manifest identity/version/ARM/keepalive entrypoint, cryptographic signature with existing development signer, unchanged embedded native DLL, MakeAppx extraction and 48 native XAML URI/PRI mappings including all three Settings variants. Development signing is not public trust. Previous 1.0.20 package retained unchanged. Temporary signing PFX removed by build cleanup.
+- Portable playback suite: PASS, including production keepalive constant (15..1439 minute contract), configuration HRESULT classification and source wiring. Login Helper source audit skipped because its sibling checkout is absent.
+- Native transport probe: 2/2 PASS. Native liveness probe: 2/2 PASS. Native source and DLL unchanged.
+- XAML URI self-test: PASS; generated ARM Release URIs: 43/43 PASS.
+- Code review: checked constructor units/range, hardware-slot requirement, registration ordering, cancellation suppression, secret-free stage diagnostics and unchanged account/FFI/audio boundaries. No new blocking finding in this focused diff. Permanent-error retry suppression is not implemented; diagnostic classification does not change native retry behavior.
+- Physical acceptance pending: hardware slot allocated, real transferred audio, continued remote authority while locked, natural track transitions and long soak. This fixes the confirmed invalid constructor argument, not a claim of completed background acceptance.
+
 ## PlatformMedia Mobile output policy regression
 
 - Artifact generated: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.20.0_ARM_Test/LibreSpotUWP_1.0.20.0_ARM.appx` (11,328,554 bytes). SHA-256: `B3BF06E0DD8A3861FC4CA883D377CA139A15FDD1F6839D8C67F04843A1EAB39A`.

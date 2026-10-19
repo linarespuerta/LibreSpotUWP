@@ -45,6 +45,7 @@ internal static class Program
             ControlWakeCancellationAndBacklogAreBounded,
             BackendStartupCheckpointsAreDurableBoundedAndSecretFree,
             MobilePlatformDefaultNeverTouchesAudioDeviceSetter,
+            DealerKeepAliveUsesDocumentedMinutesAndClassifiesFailures,
             ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness,
             PlatformMediaWiringUsesRealPcmAndScopedNetworkWork,
             RepetitiveTelemetryProducesOneSinkEntry,
@@ -991,6 +992,20 @@ internal static class Program
                 "synchronous checkpoint writes leaked onto the PCM sample path");
         }
         finally { File.Delete(path); }
+    }
+
+    private static void DealerKeepAliveUsesDocumentedMinutesAndClassifiesFailures()
+    {
+        if (DealerChannelPolicy.KeepAliveIntervalMinutes < 15 || DealerChannelPolicy.KeepAliveIntervalMinutes > 1439)
+            throw new Exception("ControlChannelTrigger interval violates the WinRT constructor contract.");
+        if (!DealerChannelPolicy.IsConfigurationFailure(unchecked((int)0x80070057)) ||
+            !DealerChannelPolicy.IsConfigurationFailure(unchecked((int)0x80070005)) ||
+            DealerChannelPolicy.IsConfigurationFailure(unchecked((int)0x8007274C)))
+            throw new Exception("Configuration failures must be distinguishable from socket timeouts.");
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "LibreSpotUWP", "Services", "WinRtDealerTransport.cs"));
+        if (!source.Contains("new ControlChannelTrigger(name, DealerChannelPolicy.KeepAliveIntervalMinutes,") ||
+            !source.Contains("open-{stage}-{category}-HRESULT") || !source.Contains("stage = \"websocket-connect\""))
+            throw new Exception("Production transport must use the tested interval and stage-specific diagnostics.");
     }
 
     private static void MobilePlatformDefaultNeverTouchesAudioDeviceSetter()
