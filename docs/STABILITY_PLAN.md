@@ -1,5 +1,17 @@
 # Goal 5: stability and appliance operation
 
+## Lumia MediaPlayer output-assignment repair (1.0.20.0 candidate)
+
+Package 1.0.20.0 is generated and verified: ARM/.NET Native, signature/identity, unchanged native DLL, system-default marker in the native executable and all 48 packaged XAML URIs. Host regression tests pass. Package path/hash are in TEST_PLAN.md; bypass acceptance and subsequent renderer initialization remain unverified on the Lumia.
+
+The 1.0.19.0 dedicated trace consistently reaches `platform.output-device.assign` and terminates before `platform.pcm-source.begin` in three successive attempts. Earlier transport installation, native backend selection, priority, ring pointer/capacity/producer state and consumer acknowledgement complete. The next operation at that boundary is `MediaPlayer.AudioDevice = platformOutput`; System default resolves to null. No OS crash dump is available, so this identifies the failing operation, not its internal firmware/OS cause.
+
+The repair avoids the MediaPlayer output-device API entirely on Windows Mobile when using PlatformMedia with System default. Windows retains responsibility for routing to the Lumia output. Explicit custom output selection in this combination is rejected with a managed NotSupportedException before enumeration or the setter, so existing settings rollback can handle it rather than risking native termination. Desktop enumeration/assignment and reset-to-default behavior are preserved. Other audio backends are unchanged.
+
+`PlatformAudioOutputPolicy` is exercised by host tests with injected resolver/setter delegates: Mobile default/null/whitespace invokes neither; Mobile custom selection fails before either; desktop custom and default reset retain their previous behavior. The production renderer uses this tested policy and retains the flushed diagnostic markers. The native DLL, PCM formats, stream source, effects and account rules are unchanged; this does not add a bit-perfect claim.
+
+Physical gate: install the replacement, retain System default audio output, select Windows streaming, and inspect `platform.output-device.system-default`, `pcm.media-source.created` and `platform.renderer-ready`. Then test actual sound and locked control. Bypassing the measured failing operation is not proof that every subsequent Mobile API will succeed. Keep the prior package for rollback and use the remaining checkpoints if another issue appears.
+
 ## PlatformMedia switch crash diagnostics (1.0.19.0 candidate)
 
 Package 1.0.19.0 is generated and verified: ARM/.NET Native, signature/identity, unchanged librespot DLL and all 48 packaged XAML URIs. The dedicated diagnostic filename is present in the native executable. Host regression tests pass; actual checkpoint persistence and the failing operation still require the next physical attempt. See TEST_PLAN.md for the package hash/path.

@@ -44,6 +44,7 @@ internal static class Program
             ControlWakeWaitsForNativeWorkAndStoredReply,
             ControlWakeCancellationAndBacklogAreBounded,
             BackendStartupCheckpointsAreDurableBoundedAndSecretFree,
+            MobilePlatformDefaultNeverTouchesAudioDeviceSetter,
             ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness,
             PlatformMediaWiringUsesRealPcmAndScopedNetworkWork,
             RepetitiveTelemetryProducesOneSinkEntry,
@@ -990,6 +991,33 @@ internal static class Program
                 "synchronous checkpoint writes leaked onto the PCM sample path");
         }
         finally { File.Delete(path); }
+    }
+
+    private static void MobilePlatformDefaultNeverTouchesAudioDeviceSetter()
+    {
+        int resolutions = 0, assignments = 0;
+        Func<string, Task<object>> resolve = id =>
+        {
+            resolutions++;
+            return Task.FromResult(id == "custom" ? new object() : null);
+        };
+        object assigned = null;
+        Action<object> assign = device => { assignments++; assigned = device; };
+        foreach (var id in new[] { null, "", " " })
+            PlatformAudioOutputPolicy.ConfigureAsync(true, id, resolve, assign).GetAwaiter().GetResult();
+        Assert(resolutions == 0 && assignments == 0, "Mobile default invoked the unsafe AudioDevice path");
+        bool rejected = false;
+        try { PlatformAudioOutputPolicy.ConfigureAsync(true, "custom", resolve, assign).GetAwaiter().GetResult(); }
+        catch (NotSupportedException) { rejected = true; }
+        Assert(rejected && resolutions == 0 && assignments == 0,
+            "Mobile explicit device was silently ignored or entered the unsafe setter");
+        PlatformAudioOutputPolicy.ConfigureAsync(false, "custom", resolve, assign).GetAwaiter().GetResult();
+        Assert(assigned != null && resolutions == 1 && assignments == 1, "desktop explicit output regressed");
+        PlatformAudioOutputPolicy.ConfigureAsync(false, "", resolve, assign).GetAwaiter().GetResult();
+        Assert(assigned == null && resolutions == 2 && assignments == 2, "desktop default reset retained a custom device");
+        var ring = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "LibreSpotUWP", "Services", "LibrespotRingBufferPlayer.cs"));
+        Assert(ring.Contains("PlatformAudioOutputPolicy.ConfigureAsync(") && ring.Contains("OSHelper.IsWindowsMobile, _outputDeviceId"),
+            "production renderer bypassed the tested platform-output policy");
     }
 
     private static void ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness()

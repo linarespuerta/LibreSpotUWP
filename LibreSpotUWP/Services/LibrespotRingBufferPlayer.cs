@@ -201,11 +201,24 @@ namespace LibreSpotUWP.Services
                 {
                     LogService.BackendStage("platform.timeline.begin");
                     _platformReadPolicy = new PcmStreamTimeline((int)_props.SampleRate, (int)_props.ChannelCount, (int)_props.BitsPerSample);
-                    LogService.BackendStage("platform.output-device.lookup");
-                    var platformOutput = await TryGetOutputDeviceAsync(_outputDeviceId);
+                    LogService.BackendStage("platform.output-device.configure");
+                    await PlatformAudioOutputPolicy.ConfigureAsync(
+                        OSHelper.IsWindowsMobile, _outputDeviceId,
+                        id =>
+                        {
+                            LogService.BackendStage("platform.output-device.lookup");
+                            return TryGetOutputDeviceAsync(id);
+                        },
+                        device =>
+                        {
+                            ThrowIfDisposed();
+                            LogService.BackendStage("platform.output-device.assign");
+                            _platformPlayer.AudioDevice = device;
+                            LogService.BackendStage("platform.output-device.assigned");
+                        });
                     ThrowIfDisposed();
-                    LogService.BackendStage("platform.output-device.assign");
-                    _platformPlayer.AudioDevice = platformOutput;
+                    if (OSHelper.IsWindowsMobile)
+                        LogService.BackendStage("platform.output-device.system-default");
                     LogService.BackendStage("platform.pcm-source.begin");
                     _platformSource = new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes);
                     LogService.BackendStage("platform.player-source.assign");

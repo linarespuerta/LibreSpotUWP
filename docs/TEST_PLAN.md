@@ -1,5 +1,17 @@
 # Test plan
 
+## PlatformMedia Mobile output policy regression
+
+- Artifact generated: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.20.0_ARM_Test/LibreSpotUWP_1.0.20.0_ARM.appx` (11,328,554 bytes). SHA-256: `B3BF06E0DD8A3861FC4CA883D377CA139A15FDD1F6839D8C67F04843A1EAB39A`.
+- ARM Release/.NET Native build: PASS. Manifest version/identity/ARM/keepalive, existing development cryptographic signer and MakeAppx unpack: PASS. The signer is still self-signed development, not public production trust.
+- Generated XAML URI validation: PASS (43). Packaged native executable/PRI mapping: PASS (48, all three Settings variants). New Mobile system-default checkpoint marker verified in the native executable.
+- Embedded native DLL remains `43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`. Existing 1.0.19.0 diagnostic package retained unchanged (`8C9F2D62E41E42A6A188A18D42964D4EFE68F72FAB13F2FF8A18D762F1C4DBF4`); earlier accepted-backend rollback packages retained. Temporary signing PFX removed after build.
+
+- `MobilePlatformDefaultNeverTouchesAudioDeviceSetter`: PASS using the production policy. Mobile default/null/whitespace invokes no resolver/setter; Mobile explicit selection throws before either; desktop explicit output and reset-to-default remain functional. A source wiring check verifies that the renderer calls this policy with the actual Mobile predicate and requested output ID.
+- Full portable playback suite: PASS. Native DLL unchanged; no Rust rebuild, DSP change or bit-perfect claim.
+- Evidence from 1.0.19.0: three consecutive traced switch attempts terminate at the MediaPlayer output assignment boundary. OS dump list remains empty. Internal OS failure mechanism unproven; physical acceptance of the bypass and subsequent initialization remains required.
+- Not deployed by the agent. Device gate: retain System default output, select Windows streaming, verify the default-route and renderer-ready checkpoints and actual audio, then restart once for a fresh authenticated WinRT Dealer and perform the locked-control matrix. A successful host build is not physical crash/background acceptance.
+
 ## Backend-switch diagnostic instrumentation
 
 - Generated artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.19.0_ARM_Test/LibreSpotUWP_1.0.19.0_ARM.appx` (11,326,675 bytes). SHA-256: `8C9F2D62E41E42A6A188A18D42964D4EFE68F72FAB13F2FF8A18D762F1C4DBF4`.

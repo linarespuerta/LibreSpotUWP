@@ -257,6 +257,7 @@
     <Compile Include="Services\WinRtDealerTransport.cs" />
     <Compile Include="Services\ControlWorkTracker.cs" />
     <Compile Include="Services\BackendStartupTrace.cs" />
+    <Compile Include="Services\PlatformAudioOutputPolicy.cs" />
     <Compile Include="Services\NativeWindowsAudioPlayer.cs" />
     <Compile Include="Services\AudioTransitionStateMachine.cs" />
     <Compile Include="Services\ApplicationPlaybackQueue.cs" />
