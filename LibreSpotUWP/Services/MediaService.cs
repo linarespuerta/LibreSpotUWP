@@ -2969,6 +2969,8 @@ namespace LibreSpotUWP.Services
                         }
 
                         await EnsureRingPlayerAsync();
+                        if (!CanPublishNativePlayback(playbackEvent))
+                            return;
                         var playbackReady = _ringPlayer.RequestPlaybackAsync(
                             playbackEvent.PlayRequestId,
                             playbackEvent.AudioGeneration);
@@ -2980,7 +2982,7 @@ namespace LibreSpotUWP.Services
                             if (_mediaPlayer.PlaybackSession.PlaybackState != MediaPlaybackState.Playing)
                                 _mediaPlayer.Play();
                         }
-                        if (!await playbackReady)
+                        if (!await playbackReady || !CanPublishNativePlayback(playbackEvent))
                         {
                             LogService.Info($"[MediaService.OnPlaybackChanged] Ignoring stale PlaybackResumed generation={playbackEvent.AudioGeneration}, request={playbackEvent.PlayRequestId}.");
                             return;
@@ -5272,6 +5274,18 @@ namespace LibreSpotUWP.Services
                     Previous();
                     break;
             }
+        }
+
+        private bool CanPublishNativePlayback(LibrespotPlaybackEvent playbackEvent)
+        {
+            return Volatile.Read(ref _disposed) == 0 &&
+                Volatile.Read(ref _playbackRequested) != 0 &&
+                IsSelectedSpotifyConnectDeviceLocal &&
+                playbackEvent.SessionGeneration == _librespot.SessionGeneration &&
+                _ringPlayer != null &&
+                (_ringPlayer.HasPendingTransition
+                    ? _ringPlayer.IsEventForPendingTransition(playbackEvent.PlayRequestId, playbackEvent.AudioGeneration)
+                    : _ringPlayer.IsEventForActiveGeneration(playbackEvent.PlayRequestId, playbackEvent.AudioGeneration));
         }
 
         private async void OnSmtcPlayReceived(MediaPlaybackCommandManager sender, MediaPlaybackCommandManagerPlayReceivedEventArgs args)

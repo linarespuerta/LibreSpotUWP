@@ -856,10 +856,19 @@ internal static class Program
             "Play/Pause can be dispatched twice through ButtonPressed");
         var ready = media.IndexOf("var playbackReady = _ringPlayer.RequestPlaybackAsync", StringComparison.Ordinal);
         var arm = media.IndexOf("_mediaPlayer.Play()", ready, StringComparison.Ordinal);
-        var wait = media.IndexOf("if (!await playbackReady)", ready, StringComparison.Ordinal);
+        var wait = media.IndexOf("if (!await playbackReady || !CanPublishNativePlayback(playbackEvent))", ready, StringComparison.Ordinal);
         Assert(ready >= 0 && arm > ready && wait > arm &&
                media.Substring(ready, arm - ready).Contains("!playbackReady.IsCompleted || await playbackReady"),
             "background media must arm before PCM pre-roll, excluding rejected requests");
+        var guardStart = media.IndexOf("private bool CanPublishNativePlayback", StringComparison.Ordinal);
+        var guardEnd = media.IndexOf("private async void OnSmtcPlayReceived", guardStart, StringComparison.Ordinal);
+        var guard = media.Substring(guardStart, guardEnd - guardStart);
+        Assert(guard.Contains("Volatile.Read(ref _disposed) == 0") &&
+               guard.Contains("Volatile.Read(ref _playbackRequested) != 0") &&
+               guard.Contains("IsSelectedSpotifyConnectDeviceLocal") &&
+               guard.Contains("playbackEvent.SessionGeneration == _librespot.SessionGeneration") &&
+               guard.Contains("IsEventForActiveGeneration") && guard.Contains("IsEventForPendingTransition"),
+            "pre-roll completion can publish after pause, transfer, disposal or session replacement");
     }
 
     private static void RepetitiveTelemetryProducesOneSinkEntry()
