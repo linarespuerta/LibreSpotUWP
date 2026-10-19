@@ -447,7 +447,22 @@ Regression checks cover queued work, subscriber handling/Pending/drop, malformed
 
 This implements authenticated control/background playback, **not brokered idle fresh-account Zeroconf discovery**. Native mDNS/TCP listeners remain unchanged. New-account discovery while locked and idle is a separate acceptance item and may require a supported listener-broker design; do not infer it from Dealer wake success. The actual WinRT API/firmware behavior, audio quality and all lock/soak results remain unverified until measured on the Lumia.
 
-### 1.0.21: fix rejected Dealer trigger configuration
+### 1.0.22: receiver-lock regression investigation and bounded corrections
+
+Device evidence from 1.0.21 confirms successful hardware-slot allocation and playback before lock. On receiver lock the extended-execution session was revoked by system policy, followed by actual suspension despite the application's preserved Playing intent. Later a wake drain ended with `background-work-cancelled`, closing and reconnecting Dealer; cleanup also reported HRESULT `0x8000000E`. A connected controller and an advertised Playing state did not establish audible output. The exact cause of audio suspension is still unconfirmed.
+
+This build does **not** claim to fix the entire lock regression:
+
+- A local 20-second drain budget no longer manufactures a socket failure. It logs the outstanding native-work count, reply count, registration and PCM startup gates and completes that wake deferral. Actual OS cancellation still closes the channel. Completing the deferral does not promise protection for work still pending; inspect that diagnostic and physical results before acceptance. No indefinite deferral, longer arbitrary timeout or periodic network lease is introduced.
+- Socket, push registration, keepalive registration and trigger cleanup are attempted independently so one closed-resource exception cannot skip the remaining releases.
+- Platform PCM delivery uses atomic request/sample/byte/last-sample counters, with no logging on the per-sample hot path. A five-second diagnostic snapshot and source Starting/Paused/Closed events report pending sample requests, available PCM bytes and delivered timeline. The timer is diagnostic only, cannot keep a suspended process awake and is disposed with the source. It logs no payload, account, endpoint or reply key. Existing MediaPlayer state/error and lifecycle logs provide the correlation.
+- Native DLL, audio format, source duration/buffering policy, backend default and account boundaries are unchanged. Do not guess a new buffer size or fabricate audio to mask the failure.
+
+Controlled device test: keep Windows streaming and System default selected, restart once, play 20 seconds, then lock **only the Lumia** for 30 seconds without controller commands. Unlock and export the trace. Correlate the last sample age/request/sample counts and ring availability with source events, suspension and outstanding wake ownership. Growing requests with no samples and empty PCM suggests producer starvation; unchanged requests with PCM available suggests downstream demand stopped. A heartbeat gap alone indicates no executing diagnostic callback, not proof of which component caused suspension. A sample submitted to MediaStreamSource is not proof of physical audio output. Then test both locks, remote pause/resume/seek/next, at least three natural boundaries, guest transfer and a 60-minute soak. Compare with the retained previous-backend rollback rather than asserting that 1.0.16 used the same backend/settings.
+
+Review and portable regression coverage include concurrent counter updates, snapshots without protocol keys, close releasing pending work, the local-budget vs OS-cancellation branch, and independently attempted cleanup wiring. Windows API callbacks and actual Connected Standby remain physical acceptance gates.
+
+### 1.0.21 constructor correction details
 
 The 1.0.20 device trace showed repeated `open-HRESULT-0x80070057` failures before authenticated Dealer registration. The transport supplied **1 minute** to `ControlChannelTrigger`; Microsoft's constructor contract requires **15..1439 minutes**. The renderer had completed initialization. Account metadata/lyrics following the controller was not evidence of an established Connect playback session.
 

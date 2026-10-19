@@ -23,6 +23,8 @@ namespace LibreSpotUWP.Services
         private int _disposed;
         private int _pendingRequests;
         private int _discontinuous = 1;
+        private readonly PcmDeliveryDiagnostics _diagnostics = new PcmDeliveryDiagnostics();
+        private readonly Timer _diagnosticTimer;
         public MediaStreamSource Stream { get; }
         public MediaSource Source { get; }
 
@@ -46,9 +48,25 @@ namespace LibreSpotUWP.Services
             LogService.BackendStage("pcm.stream.events");
             Stream.Starting += OnStarting;
             Stream.SampleRequested += OnSampleRequested;
+            Stream.Paused += OnPaused;
+            Stream.Closed += OnClosed;
             LogService.BackendStage("pcm.media-source.create");
             Source = MediaSource.CreateFromMediaStreamSource(Stream);
             LogService.BackendStage("pcm.media-source.created");
+            _diagnosticTimer = new Timer(_ => TraceState("heartbeat"), null, 5000, 5000);
+        }
+
+        private void OnPaused(MediaStreamSource sender, object args) => TraceState("source-paused");
+        private void OnClosed(MediaStreamSource sender, MediaStreamSourceClosedEventArgs args) => TraceState("source-closed-" + args.Request.Reason);
+
+        private void TraceState(string reason)
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+            try
+            {
+                LogService.Info($"Platform PCM diagnostic; reason={reason}, {_diagnostics.Snapshot()}, pending={Volatile.Read(ref _pendingRequests)}, availableBytes={_available()}, positionMs={_timeline.Position.TotalMilliseconds:F0}.");
+            }
+            catch (Exception ex) { LogService.Warn($"Platform PCM diagnostic failed: HRESULT=0x{ex.HResult:X8}."); }
         }
 
         private static TaskCompletionSource<bool> NewSignal() =>
@@ -67,12 +85,14 @@ namespace LibreSpotUWP.Services
 
         private void OnStarting(MediaStreamSource sender, MediaStreamSourceStartingEventArgs args)
         {
+            TraceState("source-starting");
             // A resumed live source continues its own monotonic PCM timeline.
             args.Request.SetActualStartPosition(_timeline.Position);
         }
 
         private async void OnSampleRequested(MediaStreamSource sender, MediaStreamSourceSampleRequestedEventArgs args)
         {
+            _diagnostics.Requested();
             var deferral = args.Request.GetDeferral();
             bool acquired = false;
             // MF normally serializes audio requests. Bound ownership even if a
@@ -108,6 +128,7 @@ namespace LibreSpotUWP.Services
                         // never from the old synthetic 24-hour silent source.
                         sender.SetBufferedRange(start, _timeline.BufferedEnd(_available()));
                         args.Request.Sample = sample;
+                        _diagnostics.Delivered(data.Length);
                         WinRtDealerTransport.PcmDelivered(startupVersion);
                         return;
                     }
@@ -135,6 +156,9 @@ namespace LibreSpotUWP.Services
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             Stream.Starting -= OnStarting;
             Stream.SampleRequested -= OnSampleRequested;
+            Stream.Paused -= OnPaused;
+            Stream.Closed -= OnClosed;
+            _diagnosticTimer?.Dispose();
             _lifetime.Cancel();
             // Pending MF deferrals retain this object until they finish. Do not
             // dispose their semaphore/token underneath an awaited continuation.

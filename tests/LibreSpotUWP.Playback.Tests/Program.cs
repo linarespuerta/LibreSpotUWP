@@ -46,6 +46,7 @@ internal static class Program
             BackendStartupCheckpointsAreDurableBoundedAndSecretFree,
             MobilePlatformDefaultNeverTouchesAudioDeviceSetter,
             DealerKeepAliveUsesDocumentedMinutesAndClassifiesFailures,
+            PcmDiagnosticsAndWakeBudgetDoNotManufactureDisconnects,
             ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness,
             PlatformMediaWiringUsesRealPcmAndScopedNetworkWork,
             RepetitiveTelemetryProducesOneSinkEntry,
@@ -1006,6 +1007,30 @@ internal static class Program
         if (!source.Contains("new ControlChannelTrigger(name, DealerChannelPolicy.KeepAliveIntervalMinutes,") ||
             !source.Contains("open-{stage}-{category}-HRESULT") || !source.Contains("stage = \"websocket-connect\""))
             throw new Exception("Production transport must use the tested interval and stage-specific diagnostics.");
+    }
+
+    private static void PcmDiagnosticsAndWakeBudgetDoNotManufactureDisconnects()
+    {
+        var counters = new PcmDeliveryDiagnostics();
+        if (!counters.Snapshot().Contains("lastSampleAgeMs=-1")) throw new Exception("No sample must be explicit.");
+        Parallel.For(0, 1000, _ => { counters.Requested(); counters.Delivered(120); });
+        var snapshot = counters.Snapshot();
+        if (!snapshot.Contains("requests=1000,") || !snapshot.Contains("samples=1000,") || !snapshot.Contains("bytes=120000,"))
+            throw new Exception("Concurrent PCM diagnostic counters lost updates.");
+        var work = new ControlWorkTracker();
+        work.Begin();
+        work.TrackReply("private-key-never-exported");
+        work.BeginStartup(1);
+        if (!work.DiagnosticSnapshot.Contains("nativeWork=1, replies=1") || work.DiagnosticSnapshot.Contains("private-key"))
+            throw new Exception("Work snapshot must explain ownership without protocol identifiers.");
+        work.Close();
+        if (!work.IsIdle || !work.DiagnosticSnapshot.Contains("closed=True")) throw new Exception("Close must release tracked work.");
+        var root = FindRepositoryRoot();
+        var transport = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "WinRtDealerTransport.cs"));
+        if (!transport.Contains("if (cancellation.IsCancellationRequested) Fail(\"background-system-cancelled\")") ||
+            transport.Contains("Fail(\"background-work-cancelled\")") ||
+            !transport.Contains("Cleanup(() => _trigger?.Dispose())"))
+            throw new Exception("Local drain timeout must not disconnect; cleanup must reach each resource.");
     }
 
     private static void MobilePlatformDefaultNeverTouchesAudioDeviceSetter()

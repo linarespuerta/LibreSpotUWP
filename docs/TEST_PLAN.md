@@ -1,5 +1,14 @@
 # Test plan
 
+## Receiver-lock investigation package (1.0.22)
+
+- ARM Release/.NET Native build: PASS. Artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.22.0_ARM_Test/LibreSpotUWP_1.0.22.0_ARM.appx`, 11,335,515 bytes, SHA-256 `B0B6A9E77110CB408845144EB3B7CE7425539F45737D87B9DFDF33A33BABB157`.
+- Verification: PASS existing package identity and development signer, ARM/version/keepalive manifest, unchanged embedded native DLL, 48 native XAML URI/PRI mappings including all Settings pages, and MakeAppx extraction. Signature verification is cryptographic validity, not public certificate trust. Prior packages retained; temporary private signing PFX removed.
+- Native transport/liveness probes: 4/4 PASS; XAML checker self-test: PASS. Review found no additional blocker in this focused diff; actual lock behavior remains unverified.
+- Portable playback suite: PASS, including concurrent PCM diagnostic counters, redacted outstanding-work snapshot, close/idle ownership and production local-budget cancellation/cleanup wiring. The latter checks are source audits, not simulated WinRT execution. Login Helper source audit remains skipped because its sibling checkout is absent.
+- Review: no per-sample log writes; diagnostic timer is disposed, does not request execution/network privileges and cannot establish audible output. No native rebuild, credential fallback, buffer/duration tweak or audio quality claim. Actual OS cancellation still ends the channel; a local diagnostic budget does not prove socket death.
+- Device test and acceptance limits are specified in STABILITY_PLAN.md. The immediate lock silence is not marked fixed without that test.
+
 ## Dealer constructor regression (1.0.21)
 
 - Generated ARM Release/.NET Native artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.21.0_ARM_Test/LibreSpotUWP_1.0.21.0_ARM.appx`, 11,331,168 bytes, SHA-256 `217343F4CBD03A313559C1B8271C15A11723120C797AA6D8A1E08E6864C8DC5C`.

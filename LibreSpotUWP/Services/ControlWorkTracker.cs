@@ -102,6 +102,13 @@ namespace LibreSpotUWP.Services
             }
         }
         public bool IsIdle { get { lock (_sync) return _closed || (_work == 0 && _replies.Count == 0 && _startup == null && _registration.Task.IsCompleted); } }
+        public string DiagnosticSnapshot
+        {
+            get
+            {
+                lock (_sync) return $"closed={_closed}, nativeWork={_work}, replies={_replies.Count}, registered={_registration.Task.IsCompleted}, startup={_startup != null}, ready={_startupReady}, playing={_platformPlaying}, pcm={_pcmDelivered}";
+            }
+        }
         public Task Pending { get { lock (_sync) return Task.WhenAll(_replies.Values.Select(x => x.Task).Concat(new[] { _idle.Task, _registration.Task, _startup?.Task ?? Task.CompletedTask })); } }
         public void Close()
         {

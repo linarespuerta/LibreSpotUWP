@@ -314,7 +314,14 @@ namespace LibreSpotUWP.Services
                         throw new OperationCanceledException();
                     }
                 }
-                catch (OperationCanceledException) { if (Volatile.Read(ref _disposed) == 0) Fail("background-work-cancelled"); }
+                catch (OperationCanceledException)
+                {
+                    if (Volatile.Read(ref _disposed) != 0) return;
+                    // A local drain budget is not evidence that the socket died.
+                    // Release this deferral without manufacturing a disconnect.
+                    LogService.Warn($"Dealer wake ended; channel={_id}, systemCancelled={cancellation.IsCancellationRequested}, {_work.DiagnosticSnapshot}.");
+                    if (cancellation.IsCancellationRequested) Fail("background-system-cancelled");
+                }
             }
 
             private void Fail(string reason)
@@ -337,13 +344,19 @@ namespace LibreSpotUWP.Services
                 lock (_resources)
                 {
                     _socket.MessageReceived -= Received;
-                    _socket.Dispose();
-                    _pushTask?.Unregister(true);
-                    _keepAliveTask?.Unregister(true);
-                    _trigger?.Dispose();
+                    Cleanup(() => _socket.Dispose());
+                    Cleanup(() => _pushTask?.Unregister(true));
+                    Cleanup(() => _keepAliveTask?.Unregister(true));
+                    Cleanup(() => _trigger?.Dispose());
                 }
                 // Queued writes/native work may still complete; their semaphore
                 // and token are collected after those continuations release them.
+            }
+
+            private static void Cleanup(Action release)
+            {
+                try { release(); }
+                catch (Exception ex) { LogService.Warn($"Dealer resource cleanup failed: HRESULT=0x{ex.HResult:X8}."); }
             }
         }
     }
