@@ -174,32 +174,48 @@ namespace LibreSpotUWP.Services
             try
             {
                 ThrowIfDisposed();
+                LogService.BackendStage("ring.priority.begin");
                 using (var process = Process.GetCurrentProcess())
                     process.PriorityClass = ProcessPriorityClass.High;
+                LogService.BackendStage("ring.priority.end");
 
+                LogService.BackendStage("ring.buffer-pointer.begin");
                 await WaitForRingBufferAsync();
+                LogService.BackendStage("ring.buffer-pointer.end");
                 ThrowIfDisposed();
 
+                LogService.BackendStage("ring.capacity.begin");
                 _capacityBytes = (int)librespot_audio_get_capacity().ToUInt32();
+                LogService.BackendStage("ring.producer-state.begin");
                 var producer = GetProducerState();
+                LogService.BackendStage("ring.producer-state.end");
                 _readSequence = (long)producer.WriteSequence;
+                LogService.BackendStage("ring.consumer-sequence.begin");
                 librespot_audio_set_read_sequence(producer.WriteSequence);
+                LogService.BackendStage("ring.consumer-sequence.end");
                 _frameSize = (int)(_props.ChannelCount * (_props.BitsPerSample / 8));
                 var preRollBytes = MillisecondsToAlignedBytes(PreRollMilliseconds);
                 _transitionState = new AudioTransitionStateMachine((ulong)preRollBytes);
 
                 if (_platformPlayer != null)
                 {
+                    LogService.BackendStage("platform.timeline.begin");
                     _platformReadPolicy = new PcmStreamTimeline((int)_props.SampleRate, (int)_props.ChannelCount, (int)_props.BitsPerSample);
+                    LogService.BackendStage("platform.output-device.lookup");
                     var platformOutput = await TryGetOutputDeviceAsync(_outputDeviceId);
                     ThrowIfDisposed();
+                    LogService.BackendStage("platform.output-device.assign");
                     _platformPlayer.AudioDevice = platformOutput;
+                    LogService.BackendStage("platform.pcm-source.begin");
                     _platformSource = new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes);
+                    LogService.BackendStage("platform.player-source.assign");
                     _platformPlayer.Source = _platformSource.Source;
+                    LogService.BackendStage("platform.player-source.assigned");
                     _transitionTimer = new Timer(_ => RunTransitionPoll(), null, Timeout.Infinite, Timeout.Infinite);
                     _producerWatchdogTimer = new Timer(_ => CheckProducerHealth(), null, Timeout.Infinite, Timeout.Infinite);
                     Interlocked.Exchange(ref _graphCounted, 1);
                     Interlocked.Increment(ref _liveGraphCount);
+                    LogService.BackendStage("platform.renderer-ready");
                     LogService.Info($"Platform PCM renderer initialized; sampleRate={_props.SampleRate}, channels={_props.ChannelCount}, bits={_props.BitsPerSample}, frameBytes={_frameSize}, capacityBytes={_capacityBytes}. Native rendering and AudioGraph are disabled.");
                     return;
                 }

@@ -33,15 +33,22 @@ namespace LibreSpotUWP.Services
             _cancelled = Task.Delay(Timeout.Infinite, _lifetime.Token);
             _timeline = new PcmStreamTimeline((int)properties.SampleRate, (int)properties.ChannelCount, (int)properties.BitsPerSample);
             _sampleBytes = Math.Max(1, (int)properties.SampleRate / 50) * _timeline.FrameBytes;
-            Stream = new MediaStreamSource(new AudioStreamDescriptor(properties))
-            {
-                CanSeek = false,
-                Duration = TimeSpan.Zero,
-                BufferTime = TimeSpan.FromMilliseconds(40)
-            };
+            LogService.BackendStage("pcm.descriptor.create");
+            var descriptor = new AudioStreamDescriptor(properties);
+            LogService.BackendStage("pcm.stream.create");
+            Stream = new MediaStreamSource(descriptor);
+            LogService.BackendStage("pcm.stream.can-seek");
+            Stream.CanSeek = false;
+            LogService.BackendStage("pcm.stream.duration");
+            Stream.Duration = TimeSpan.Zero;
+            LogService.BackendStage("pcm.stream.buffer-time");
+            Stream.BufferTime = TimeSpan.FromMilliseconds(40);
+            LogService.BackendStage("pcm.stream.events");
             Stream.Starting += OnStarting;
             Stream.SampleRequested += OnSampleRequested;
+            LogService.BackendStage("pcm.media-source.create");
             Source = MediaSource.CreateFromMediaStreamSource(Stream);
+            LogService.BackendStage("pcm.media-source.created");
         }
 
         private static TaskCompletionSource<bool> NewSignal() =>

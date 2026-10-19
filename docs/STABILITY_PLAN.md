@@ -1,6 +1,20 @@
 # Goal 5: stability and appliance operation
 
-## Settings navigation regression follow-up
+## PlatformMedia switch crash diagnostics (1.0.19.0 candidate)
+
+Package 1.0.19.0 is generated and verified: ARM/.NET Native, signature/identity, unchanged librespot DLL and all 48 packaged XAML URIs. The dedicated diagnostic filename is present in the native executable. Host regression tests pass; actual checkpoint persistence and the failing operation still require the next physical attempt. See TEST_PLAN.md for the package hash/path.
+
+The user physically confirmed Settings/About on 1.0.18.0, then reported immediate termination when selecting Windows streaming. Multiple process launches end their ordinary queued log after `WinRtDealerTransport.Install`, before the renderer-ready message or settings commit. This narrows the interval but does **not** identify the failing API. Device Portal reports crash capture enabled, yet its dump list remains empty; WER enumeration is unavailable on this device. No crash stack has been obtained.
+
+The diagnostic candidate adds `TempState/audio-backend-startup.txt`, independent of the asynchronous log queue. Startup/switch checkpoints are synchronously written and flushed **before** native/WinRT operations, with markers after completion. Coverage includes backend probe, prior renderer disposal, transport installation, native selection, format/controller setup, process priority, ring buffer pointer/capacity/producer state/read acknowledgement, output-device assignment, audio descriptor/MediaStreamSource properties, MediaSource construction and MediaPlayer source assignment. Managed initialization/selection failures record only exception type and HRESULT.
+
+The file is bounded at 64 KiB, carries a per-launch identifier and sequence, retains recent launches and accepts only code-owned stage identifiers. It records no credentials, URLs, device IDs, PCM or arbitrary exception messages. Storage errors cannot abort playback. No checkpoint writes occur in PCM sample callbacks. This adds diagnostic startup I/O, not a claimed crash fix or an audio-quality change. The native DLL, decode format, effects, account ownership and audio processing policy remain unchanged.
+
+Next physical step: install the diagnostic package, select Windows streaming once, then read the dedicated file through Device Portal's scoped app-file API. Compare the final stage with its paired completion marker; correlate launch ID and any dump. An unmatched marker identifies the next operation reached, not by itself the root cause. Do not repeat blind builds or claim a remedy without this evidence. Keep crash capture enabled for this attempt and disable it after diagnostic collection is complete.
+
+Audio-quality boundary: PlatformMedia is not a verified bit-perfect path. The current Rust WASAPI implementation also uses shared mode with automatic conversion flags. Preserve the Goal 4 distinction between PCM fidelity before the DAC and the analog 3.5 mm output; do not label any backend end-to-end bit-perfect without measurements.
+
+## Settings resource-root repair history
 
 The 1.0.17.0 hardware test exposed a generated XAML resource-root mismatch: Settings requests `ms-appx:///LibreSpotUWP/Views/...`, but its packaged resources are under `Files/Views/...`. This fails in `InitializeComponent`, before backend selection or About can load. All three Settings variants were affected; comparison with the 1.0.15.0 executable confirms the old correct `/Views/...` URIs. This is separate from the audio/network work and does not justify changing credentials, dependencies or the OS minimum.
 

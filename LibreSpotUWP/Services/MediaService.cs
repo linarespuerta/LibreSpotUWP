@@ -1816,6 +1816,7 @@ namespace LibreSpotUWP.Services
 
         public async Task SetAudioBackendAsync(AudioBackendKind backend)
         {
+            LogService.BackendStage("backend-switch.requested");
             if (!Enum.IsDefined(typeof(AudioBackendKind), backend))
                 throw new ArgumentOutOfRangeException(nameof(backend));
 
@@ -1835,9 +1836,11 @@ namespace LibreSpotUWP.Services
                         backend,
                         outputDeviceId).ConfigureAwait(false);
                     UserSettings.AudioBackend = backend;
+                    LogService.BackendStage("backend-switch.committed");
                 }
                 catch (Exception changeError)
                 {
+                    LogService.BackendStage("backend-switch.failed", changeError);
                     try
                     {
                         await RecreateAudioPlayerAsync(
@@ -2219,8 +2222,16 @@ namespace LibreSpotUWP.Services
             ILibrespotAudioPlayer player;
             if (backend == AudioBackendKind.RingBuffer || backend == AudioBackendKind.PlatformMedia)
             {
-                if (backend == AudioBackendKind.PlatformMedia) WinRtDealerTransport.Install();
+                if (backend == AudioBackendKind.PlatformMedia)
+                {
+                    LogService.BackendStage("platform.transport-install.begin");
+                    WinRtDealerTransport.Install();
+                    LogService.BackendStage("platform.transport-install.end");
+                }
+                LogService.BackendStage("ring.native-selection.begin");
                 await NativeWindowsAudioPlayer.SelectBackendAsync(backend, outputDeviceId).ConfigureAwait(false);
+                LogService.BackendStage("ring.native-selection.end");
+                LogService.BackendStage("ring.encoding-properties.begin");
                 var props = (_librespot as LibrespotService)?.EncodingProperties
                             ?? AudioEncodingProperties.CreatePcm(44100, 2, 16);
                 if (backend == AudioBackendKind.PlatformMedia &&
@@ -2231,6 +2242,7 @@ namespace LibreSpotUWP.Services
                 }
                 player = new LibrespotRingBufferPlayer(props, outputDeviceId,
                     backend == AudioBackendKind.PlatformMedia ? _mediaPlayer : null);
+                LogService.BackendStage("ring.controller-created");
                 if (backend == AudioBackendKind.RingBuffer)
                     _mediaPlayer.Source = CreateSilentMediaSource();
             }
@@ -2242,14 +2254,19 @@ namespace LibreSpotUWP.Services
 
             try
             {
+                LogService.BackendStage("renderer.initialize.begin");
                 await player.InitializeAsync().ConfigureAwait(false);
+                LogService.BackendStage("renderer.initialize.end");
                 player.SetAudioEffectsPreset(UserSettings.AudioEffectsPreset);
+                LogService.BackendStage("renderer.effects-configured");
                 player.SetSessionState(_librespot.Session.IsConnected, _librespot.SessionGeneration);
+                LogService.BackendStage("renderer.session-configured");
                 player.ProducerStalled += OnProducerStalled;
                 return player;
             }
-            catch
+            catch (Exception error)
             {
+                LogService.BackendStage("renderer.initialize.failed", error);
                 await player.DisposeAsync().ConfigureAwait(false);
                 throw;
             }
@@ -2312,10 +2329,13 @@ namespace LibreSpotUWP.Services
             // The Rust call probes the complete replacement graph before it
             // publishes the selection. A rejected backend therefore leaves
             // the current renderer and managed controller untouched.
+            LogService.BackendStage("recreate.native-probe.begin");
             await NativeWindowsAudioPlayer.SelectBackendAsync(
                 backend,
                 outputDeviceId).ConfigureAwait(false);
+            LogService.BackendStage("recreate.native-probe.end");
             NativeWindowsAudioPlayer.ApplyEffects();
+            LogService.BackendStage("recreate.native-effects.end");
 
             if ((_librespot as LibrespotService)?.HasInstance != true)
                 return;
@@ -2328,10 +2348,12 @@ namespace LibreSpotUWP.Services
                 previousPlayer = _ringPlayer;
                 if (previousPlayer != null)
                 {
+                    LogService.BackendStage("recreate.previous-dispose.begin");
                     previousPlayer.ProducerStalled -= OnProducerStalled;
                     previousPlayer.Stop();
                     await previousPlayer.DisposeAsync().ConfigureAwait(false);
                     _ringPlayer = null;
+                    LogService.BackendStage("recreate.previous-dispose.end");
                 }
                 replacementPlayer = await CreateAudioPlayerAsync(backend, outputDeviceId).ConfigureAwait(false);
                 _ringPlayer = replacementPlayer;

@@ -1,5 +1,17 @@
 # Test plan
 
+## Backend-switch diagnostic instrumentation
+
+- Generated artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.19.0_ARM_Test/LibreSpotUWP_1.0.19.0_ARM.appx` (11,326,675 bytes). SHA-256: `8C9F2D62E41E42A6A188A18D42964D4EFE68F72FAB13F2FF8A18D762F1C4DBF4`.
+- ARM Release/.NET Native build: PASS. Manifest version/identity/ARM/keepalive, cryptographic signature with the existing development signer, and MakeAppx extraction: PASS. The signer remains self-signed development, not public production trust.
+- Generated XAML check: PASS (43). Packaged executable/PRI mapping: PASS (48, all Settings variants). The native executable contains the dedicated `audio-backend-startup.txt` marker. This does not substitute for reading the file after an actual device run.
+- Embedded librespot DLL unchanged (`43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`); no Rust rebuild. 1.0.18.0 APPX retained unchanged (`8CA4F7CCC1596CEAFCFF204C6C1A5617676C2E3537F0AA13452E8D36503B52AD`). Temporary signing PFX removed after build.
+
+- `BackendStartupCheckpointsAreDurableBoundedAndSecretFree`: PASS. Tests the production trace class: immediate file visibility without a logging worker/delay, type/HRESULT without exception message leakage, rejection of untrusted stage strings, 64 KiB bound, retained previous-launch checkpoint, and contained storage failures. Source wiring checks require markers before WinRT stream/source creation and prohibit checkpoint writes in PCM sample handling.
+- Full portable playback suite: PASS with the diagnostic changes. This is instrumentation only; it does not establish a crash fix, successful PlatformMedia startup or bit-perfect output.
+- Physical 1.0.18.0: Settings/About accepted by the user; PlatformMedia selection terminates the app. Crash dump capture is enabled but no dump was enumerated. Root cause remains open pending the dedicated flushed checkpoint file from the diagnostic candidate.
+- Not deployed by the agent. Next: install 1.0.19.0, select Windows streaming once, read `TempState/audio-backend-startup.txt` using the version-specific package identity in Device Portal, and correlate the latest launch's final stage with the last completed operation. Keep device traces/dumps outside Git. Do not claim this diagnostic package fixes the crash or verifies Hi-Fi fidelity.
+
 ## Verified Settings resource-root repair: 1.0.18.0
 
 - Cause confirmed by device exception plus package comparison: 1.0.17.0's native executable used `ms-appx:///LibreSpotUWP/Views/...Settings...xaml`; PRI resources existed only under `Files/Views/...Settings...xbf`. The accepted 1.0.15.0 executable used the correct `/Views/...` root. Exact earlier cache-contaminating invocation remains unproven.

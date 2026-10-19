@@ -43,6 +43,7 @@ internal static class Program
             PlatformPcmRejectsOverrunAndInvalidFormats,
             ControlWakeWaitsForNativeWorkAndStoredReply,
             ControlWakeCancellationAndBacklogAreBounded,
+            BackendStartupCheckpointsAreDurableBoundedAndSecretFree,
             ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness,
             PlatformMediaWiringUsesRealPcmAndScopedNetworkWork,
             RepetitiveTelemetryProducesOneSinkEntry,
@@ -952,6 +953,43 @@ internal static class Program
         work.Begin();
         Assert(work.IsIdle && !work.TrackReply("late") && work.Pending.IsCompleted,
             "closed channel retained work or accepted a late-session reply");
+    }
+
+    private static void BackendStartupCheckpointsAreDurableBoundedAndSecretFree()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var trace = new BackendStartupTrace(path, "test-launch");
+            Assert(trace.Write("platform.transport-install.begin"), "startup checkpoint failed");
+            var first = File.ReadAllText(path); // Read immediately, without a writer task or delay.
+            Assert(first.Contains("sequence=1") && first.Contains("platform.transport-install.begin"),
+                "checkpoint remained buffered after Write returned");
+            Assert(trace.Write("platform.failed", new InvalidOperationException("access_token=secret-never-log")),
+                "failure checkpoint could not be recorded");
+            var failure = File.ReadAllText(path);
+            Assert(failure.Contains("System.InvalidOperationException") && failure.Contains("HRESULT=0x") &&
+                   !failure.Contains("secret-never-log") && !failure.Contains("access_token"),
+                "diagnostic recorded an arbitrary exception message or omitted its error code");
+            Assert(!trace.Write("url=https://example.invalid/token"), "untrusted stage content was accepted");
+            File.WriteAllText(path, new string('x', BackendStartupTrace.MaximumBytes));
+            Assert(trace.Write("platform.next-attempt"), "full checkpoint file prevented diagnosis");
+            Assert(new FileInfo(path).Length <= BackendStartupTrace.MaximumBytes &&
+                   File.ReadAllText(path).Contains("platform.next-attempt"), "startup trace grew without a bound");
+            Assert(new BackendStartupTrace(path, "next-launch").Write("application.trace-ready") &&
+                   File.ReadAllText(path).Contains("test-launch") && File.ReadAllText(path).Contains("next-launch"),
+                "next process launch erased the previous attempt");
+            Assert(!new BackendStartupTrace(Path.Combine(path, "absent-parent.txt"), "test").Write("failure.expected"),
+                "storage failure escaped or unexpectedly succeeded");
+            var root = FindRepositoryRoot();
+            var pcm = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "PlatformPcmSource.cs"));
+            Assert(pcm.IndexOf("pcm.stream.create", StringComparison.Ordinal) < pcm.IndexOf("new MediaStreamSource", StringComparison.Ordinal) &&
+                   pcm.IndexOf("pcm.media-source.create", StringComparison.Ordinal) < pcm.IndexOf("MediaSource.CreateFromMediaStreamSource", StringComparison.Ordinal),
+                "WinRT diagnostic markers are not emitted before the risky call");
+            Assert(!pcm.Substring(pcm.IndexOf("private async void OnSampleRequested", StringComparison.Ordinal)).Contains("BackendStage("),
+                "synchronous checkpoint writes leaked onto the PCM sample path");
+        }
+        finally { File.Delete(path); }
     }
 
     private static void ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness()

@@ -32,6 +32,7 @@ namespace LibreSpotUWP.Services
         private static readonly string ProcessLaunchId = Guid.NewGuid().ToString("N").Substring(0, 10);
         private static readonly System.Text.RegularExpressions.Regex LeadingBracketPrefixRegex = new System.Text.RegularExpressions.Regex("^\\[([^\\]]+)\\]\\s*", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         private static string _logPath;
+        private static BackendStartupTrace _backendStartup;
         private static Task _writerTask;
         private static int _queuedEntries;
         private static long _droppedEntries;
@@ -44,6 +45,9 @@ namespace LibreSpotUWP.Services
         public static Task InitializeAsync()
         {
             _logPath = Path.Combine(ApplicationData.Current.TemporaryFolder.Path, "log.txt");
+            _backendStartup = new BackendStartupTrace(
+                Path.Combine(ApplicationData.Current.TemporaryFolder.Path, "audio-backend-startup.txt"), ProcessLaunchId);
+            BackendStage("application.trace-ready");
             EnsureWriterStarted();
             Enqueue("INFO", "LogService", nameof(InitializeAsync), $"Logging initialized at {_logPath}");
             return Task.CompletedTask;
@@ -51,6 +55,12 @@ namespace LibreSpotUWP.Services
 
         public static void Info(string message, [CallerFilePath] string file = null, [CallerMemberName] string member = null)
             => Enqueue("INFO", GetClassName(file), member, message);
+
+        internal static void BackendStage(string stage, Exception failure = null)
+        {
+            if (_backendStartup != null && !_backendStartup.Write(stage, failure))
+                Warn("Backend startup checkpoint could not be persisted.");
+        }
 
         public static void Warn(string message, [CallerFilePath] string file = null, [CallerMemberName] string member = null)
             => Enqueue("WARN", GetClassName(file), member, message);
