@@ -33,11 +33,11 @@ Supersedes the earlier binary provenance above for the current local/package DLL
 - The bridge is opt-in: without registered callbacks the portable Dealer transport remains in use. Authentication, Spotify protocol processing and credential ownership remain native.
 - See TEST_PLAN.md for host checks and STABILITY_PLAN.md for unverified physical acceptance. This is not a claim of certified Windows Mobile background behavior.
 
-## Network-work lifetime follow-up (not packaged)
+## Network-work lifetime follow-up (1.0.17.0)
 
 The current local `LibreSpotUWP/librespot.dll` now comes from native HEAD `f51b24e882f69ffdf91f95c05885222577eb7e7b`. Apply `0001` then `0002-uwp-network-work-lifetime.patch` to baseline `9f55482`. The native commits remain local; no third-party-origin push was made.
 
 - SHA-256: `43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`.
 - Final offline ARM32 UWP release build: PASS. PE machine `0x01C4`, AppContainer flag and all 53 managed FFI exports verified before copying into the application directory. Existing features/SDK binding patches unchanged.
-- The previous local DLL was backed up to a unique temporary file before replacement. The already-issued 1.0.16.0 APPX retains its original DLL and original package hash; no new APPX was generated.
-- Requires the matching managed startup/PCM changes. This validates compilation and binary compatibility, not physical Lumia standby behavior or .NET Native packaging of the follow-up.
+- The previous local DLL was backed up to a unique temporary file before replacement. The already-issued 1.0.16.0 APPX retains its original DLL and original package hash. The signed 1.0.17.0 APPX embeds this corrected DLL; see TEST_PLAN.md for package hash and verification.
+- Requires the matching managed startup/PCM changes. The follow-up passed ARM/.NET Native packaging, signature and embedded-DLL checks. Physical Lumia standby acceptance remains open.

@@ -387,7 +387,7 @@ Status: implemented and covered by host tests; **physical Lumia acceptance remai
 
 ### Activation and physical acceptance
 
-1. Install 1.0.16.0; choose **Windows streaming (background audio)** in Settings. Close/reopen once so the next authenticated Dealer is created through the new transport, then transfer playback from the controller.
+1. Install corrected package **1.0.17.0**; choose **Windows streaming (background audio)** in Settings. Close/reopen once so the next authenticated Dealer is created through the new transport, then transfer playback from the controller.
 2. Confirm the device trace reports the WinRT transport and successful **hardware** control-channel allocation. A build alone cannot establish Mobile firmware support. Check background activity permission/Battery Saver restrictions if denied.
 3. Lock only the controller, then only the Lumia, then both. At 30 seconds, 2 minutes and 10 minutes test pause/play, next/previous, seek and volume. Repeat first-lock immediately after playback begins.
 4. Cross at least three natural track boundaries while locked, including a guest Premium account transfer. The controller must remain authoritative, not merely display a moving timeline. Repeat a paused interval followed by a remote Play while locked.
@@ -397,6 +397,8 @@ Status: implemented and covered by host tests; **physical Lumia acceptance remai
 ### Review follow-up: queued messages and asynchronous startup
 
 The 1.0.16.0 package predates these corrections. Do not use that existing APPX as evidence that the follow-up is installed.
+
+The corrected 1.0.17.0 ARM/.NET Native package is now generated and verified (signature, manifest and embedded native DLL). See TEST_PLAN.md for hashes and artifact path. It has not been deployed or physically accepted by the agent.
 
 Native source: local HEAD `f51b24e882f69ffdf91f95c05885222577eb7e7b` (implementation `6245f2a` plus the retained-result lifetime constraint); reproducible follow-up delta: `native-patches/0002-uwp-network-work-lifetime.patch` applied after `0001`. No push to the third-party native origin.
 

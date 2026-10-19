@@ -1,5 +1,15 @@
 # Test plan
 
+## Verified corrected package: 1.0.17.0
+
+- Release ARM/.NET Native build and signing: PASS. Source: `a2e6ca2` plus the manifest-only version increment to 1.0.17.0; native HEAD `f51b24e`.
+- Artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.17.0_ARM_Test/LibreSpotUWP_1.0.17.0_ARM.appx` (11,325,126 bytes).
+- APPX SHA-256: `F5773A310C1CCF8A989CDAFF1DB47B2911FB46EC995966C596A103501C22498A`.
+- Embedded corrected DLL SHA-256: `43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`; matches the verified native build exactly.
+- Manifest identity/publisher unchanged; version 1.0.17.0, architecture ARM, keepalive executable/entrypoint verified. PKCS#7 cryptographic signature and existing development signer `D12D4AD769E2DE1F8F0C82E58DD6533165658455` verified; this is not public production-certificate trust. MakeAppx unpack: PASS.
+- Portable playback suite rerun after the version increment: PASS. Existing signed 1.0.16.0 APPX retained unchanged (SHA-256 `519963B1AB61F556B25381B27C643786C73AC5A5D9C72CC66484F4EB9E1BDD52`). Temporary signing PFX removed after build.
+- Not deployed by the agent. Select/retain **Windows streaming (background audio)**, restart once, transfer Spotify, then perform the locked-startup/control/track-boundary matrix in STABILITY_PLAN.md. Physical acceptance remains open.
+
 ## Review follow-up: network ownership across queues/startup
 
 - Portable playback suite: PASS, including `ControlWakeWaitsForActualPlaybackAndRejectsStaleReadiness`. ACK-only, old Windows Playing state, pre-roll-only, obsolete startup versions and pre-readiness PCM cannot release startup. A post-readiness sample plus Windows Playing completes it; pause/close cancel it.
@@ -7,8 +17,7 @@
 - DealerLivenessProbe: PASS (2); existing retry/cancellation behavior remains covered.
 - Final native ARM32 UWP release build: PASS at `f51b24e`; PE ARM32/AppContainer and all 53 managed imports verified. Local DLL SHA-256: `43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`. Reverse-apply check for the tracked follow-up patch: PASS.
 - Managed solution ARM Release build: PASS with `/t:Build /p:AppxPackage=false /p:GenerateAppxPackageOnBuild=false /p:UseDotNetNativeToolchain=false`. This validates the UWP/XAML compilation, not .NET Native packaging or hardware behavior. Do not invoke `/t:Compile` directly: it bypasses XAML generation and reports misleading missing generated control names.
-- No follow-up APPX has been generated. The signed 1.0.16.0 artifact below is unchanged and does not contain these fixes. Locked uncached startup, PCM delivery, hardware-slot allocation and long-run control still require the Lumia.
-- For the next device package, increment the manifest version (next candidate: 1.0.17.0), include the matching native DLL and rerun .NET Native/signature/content verification. Do not replace the contents of the already-issued 1.0.16.0 identity/version.
+- The signed 1.0.16.0 artifact below is unchanged and does not contain these fixes. The corrected 1.0.17.0 package is verified above. Locked uncached startup, PCM delivery, hardware-slot allocation and long-run control still require the Lumia.
 
 ## 2026-10-18 — Background control/real PCM candidate
 
