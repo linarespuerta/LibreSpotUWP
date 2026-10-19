@@ -1,6 +1,20 @@
 # Test plan
 
-## Verified corrected package: 1.0.17.0
+## Verified Settings resource-root repair: 1.0.18.0
+
+- Cause confirmed by device exception plus package comparison: 1.0.17.0's native executable used `ms-appx:///LibreSpotUWP/Views/...Settings...xaml`; PRI resources existed only under `Files/Views/...Settings...xbf`. The accepted 1.0.15.0 executable used the correct `/Views/...` root. Exact earlier cache-contaminating invocation remains unproven.
+- Generated ARM Release `obj`/`bin` directories moved to a unique temporary backup after validating their resolved paths. Issued APPX files preserved. Built from the directory containing `LibreSpotUWP.csproj`; no Rust rebuild, credential change or backend default change.
+- `Test-GeneratedXamlUris.ps1 -SelfTest`: PASS (three correct Settings paths accepted; three duplicated-prefix paths rejected). The verifier also rejected the actual old generated Settings URI before the cache was moved.
+- Actual 1.0.17.0 package negative regression: PASS (the verifier rejects exactly the three invalid Settings resource URIs). Clean generated outputs: PASS (43 application XAML URIs). The project invokes this validation after `MarkupCompilePass1`, before native compilation/packaging.
+- Portable playback suite: PASS. ARM Release/.NET Native signed build: PASS. Existing compiler warnings remain; no build errors.
+- **Packaged** native executable versus PRI: PASS (48 unique XAML URIs, explicitly including all three correct Settings paths). This checks the artifact rather than assuming a successful compiler run produces correct runtime resource URIs.
+- Artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.18.0_ARM_Test/LibreSpotUWP_1.0.18.0_ARM.appx` (11,324,849 bytes). SHA-256: `8CA4F7CCC1596CEAFCFF204C6C1A5617676C2E3537F0AA13452E8D36503B52AD`.
+- Version/identity/ARM/keepalive manifest: PASS. Embedded native DLL matches unchanged corrected build `43598DCC36B4D2914C8305A6C8AD83106F3E06B9F4CBDAB1D0B1319FA06F059C`. PKCS#7 signature and existing development signer verified; MakeAppx unpack: PASS. Temporary signing PFX removed after build.
+- 1.0.15.0 rollback and 1.0.17.0 diagnostic packages retained with their original hashes. Not deployed by the agent. Device gate: Settings opens, About reports 1.0.18.0, backend selection is accessible; then repeat PlatformMedia locked-control/audio acceptance. Artifact mapping checks are not physical acceptance.
+
+## 1.0.17.0 build checks (superseded: physical Settings regression)
+
+Physical follow-up found `XamlParseException` before Settings initialization. The packaged native executable requests a duplicated `LibreSpotUWP/` resource prefix that is absent from the PRI. The successful checks below did not cover this runtime resource mapping and must not be read as physical acceptance. See BUILD_GUIDE.md for the exact comparison and preventive build guard.
 
 - Release ARM/.NET Native build and signing: PASS. Source: `a2e6ca2` plus the manifest-only version increment to 1.0.17.0; native HEAD `f51b24e`.
 - Artifact: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.17.0_ARM_Test/LibreSpotUWP_1.0.17.0_ARM.appx` (11,325,126 bytes).

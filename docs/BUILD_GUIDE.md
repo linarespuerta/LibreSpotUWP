@@ -1,5 +1,23 @@
 # Reproducible build guide
 
+## XAML resource-root regression prevention
+
+The 1.0.17.0 package passed signing/native checks but failed physical Settings navigation. The generated Settings `InitializeComponent` methods requested `ms-appx:///LibreSpotUWP/Views/...`, while the package PRI contained only `Files/Views/...`. The 1.0.15.0 native executable used the correct `ms-appx:///Views/...` URIs. All three Settings variants were affected; the other compiled resource entries were unchanged. This is a generated resource-root mismatch, not evidence of an audio, credential or missing-dependency failure. The exact invocation that first contaminated the incremental cache was not conclusively established.
+
+For recovery, preserve issued APPX packages and move only the exact generated `LibreSpotUWP/obj/ARM/Release` and `LibreSpotUWP/bin/ARM/Release` directories to a unique temporary backup. Verify resolved paths remain under the project before moving them. Do not edit `.g.i.cs` files by hand, delete a workspace root or rebuild the same issued package version with different contents.
+
+Run the canonical build **from the directory containing LibreSpotUWP.csproj**, using `/t:Build` and the existing signing workflow. Never invoke `/t:Compile` directly as a UWP build shortcut. Keep the verified native DLL; this managed-resource fix does not require rebuilding Rust.
+
+`ValidateGeneratedApplicationXamlUris`, attached after `MarkupCompilePass1`, runs `tools/Test-GeneratedXamlUris.ps1` before native compilation/packaging. It fails if a generated application XAML URI does not resolve under the project source root or no URIs were inspected. Run its regression checks from the repository root:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Test-GeneratedXamlUris.ps1 -SelfTest
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Test-GeneratedXamlUris.ps1 -GeneratedRoot obj/ARM/Release
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Test-GeneratedXamlUris.ps1 -PackagePath LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.18.0_ARM_Test/LibreSpotUWP_1.0.18.0_ARM.appx
+```
+
+The self-test accepts all three correct Settings URIs and rejects their duplicated-project-prefix counterparts. Package mode extracts PRI metadata with MakePri and compares the **packaged native executable's** `ms-appx:///...xaml` strings against PRI `Files/...xbf` entries, explicitly requiring all three Settings variants. Running it against 1.0.17.0 must fail for the three incorrect prefixes; use this as a negative regression check. Signing, MakeAppx extraction and desktop tests alone do not validate navigation on Windows Mobile.
+
 ## Current audit result
 
 This workstation now has Visual Studio Build Tools, the Windows 10 SDK, Rust nightly, an ARM32 UWP `LibreSpotUWP/librespot.dll`, and a local development signing certificate. Its provenance and binary validation are recorded in [NATIVE_DLL_PROVENANCE.md](NATIVE_DLL_PROVENANCE.md).

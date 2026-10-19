@@ -1,5 +1,13 @@
 # Goal 5: stability and appliance operation
 
+## Settings navigation regression follow-up
+
+The 1.0.17.0 hardware test exposed a generated XAML resource-root mismatch: Settings requests `ms-appx:///LibreSpotUWP/Views/...`, but its packaged resources are under `Files/Views/...`. This fails in `InitializeComponent`, before backend selection or About can load. All three Settings variants were affected; comparison with the 1.0.15.0 executable confirms the old correct `/Views/...` URIs. This is separate from the audio/network work and does not justify changing credentials, dependencies or the OS minimum.
+
+Recovery regenerates managed ARM Release outputs from an empty generated cache, with the previous output directories backed up outside the source tree and issued APPX files preserved. The build now validates generated application resource URIs after XAML pass 1. Its regression test rejects the exact duplicated prefix; package acceptance must also compare native executable URIs with PRI entries. See BUILD_GUIDE.md and TEST_PLAN.md. Physical Settings/About navigation and opt-in PlatformMedia lock tests remain required after installing the replacement package.
+
+Replacement package **1.0.18.0** is generated: clean ARM/.NET Native build, signature, embedded native DLL and executable-to-PRI mapping verified (48 URIs, all three Settings variants). The verifier rejects the actual 1.0.17.0 package and accepts 1.0.18.0. No native audio/network source changes were needed for this repair. Device Settings/About and locked playback are still unverified.
+
 Date: 2026-10-18. Status: reopened for loss of remote control after the controller phone locks. Earlier 1.0.15.0 acceptance and closure are retained as history, superseded by the report below.
 
 ## Reopened: controller lock loses remote control (2026-10-18)
@@ -387,7 +395,7 @@ Status: implemented and covered by host tests; **physical Lumia acceptance remai
 
 ### Activation and physical acceptance
 
-1. Install corrected package **1.0.17.0**; choose **Windows streaming (background audio)** in Settings. Close/reopen once so the next authenticated Dealer is created through the new transport, then transfer playback from the controller.
+1. Install replacement package **1.0.18.0**; verify Settings opens and About reports 1.0.18.0, then choose **Windows streaming (background audio)** in Settings. Close/reopen once so the next authenticated Dealer is created through the new transport, then transfer playback from the controller.
 2. Confirm the device trace reports the WinRT transport and successful **hardware** control-channel allocation. A build alone cannot establish Mobile firmware support. Check background activity permission/Battery Saver restrictions if denied.
 3. Lock only the controller, then only the Lumia, then both. At 30 seconds, 2 minutes and 10 minutes test pause/play, next/previous, seek and volume. Repeat first-lock immediately after playback begins.
 4. Cross at least three natural track boundaries while locked, including a guest Premium account transfer. The controller must remain authoritative, not merely display a moving timeline. Repeat a paused interval followed by a remote Play while locked.
