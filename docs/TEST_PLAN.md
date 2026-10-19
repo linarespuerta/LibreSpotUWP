@@ -12,6 +12,8 @@ The local/desktop boundary is documented in [LOCAL_TESTING.md](LOCAL_TESTING.md)
 
 ## Stability implementation validation (2026-10-18)
 
+User acceptance update: after installing 1.0.15.0, the user reported that it works and requested closure of the current stability delivery. This is a functional acceptance report; individual lock-cycle, locked-idle discovery, outage and long-run matrix results were not supplied. Retain those as deferred qualification, as recorded in `STABILITY_PLAN.md`. The next UI work uses 1.0.15.0 as its accepted baseline.
+
 APPX review follow-up (1.0.15.0): added current-intent/session/PCM checks around playback readiness so a late pre-roll completion cannot publish an obsolete Playing state. The full portable suite passed, including the expanded lock-screen wiring regression; the Login Helper audit remains skipped. Signed ARM package validation is recorded in `STABILITY_PLAN.md` after generation. Hardware acceptance remains pending.
 
 Package generation completed successfully with `Release|ARM`, .NET Native, packaging enabled and the existing development certificate. MakeAppx extraction, manifest ARM/version/identity checks, cryptographic signature verification and embedded native DLL hash comparison passed. SignTool's trust-chain check reports the existing untrusted development root. Package hash and rollback details are in `STABILITY_PLAN.md`; no deployment was performed.

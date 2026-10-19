@@ -1,6 +1,16 @@
 # Goal 5: stability and appliance operation
 
-Date: 2026-10-18. Status: implementation underway. The checkpoint at the end records delivered code and outstanding acceptance evidence.
+Date: 2026-10-18. Status: current delivery closed after user acceptance of package 1.0.15.0. Historical investigation and implementation checkpoints are retained below.
+
+## Closure and handoff (2026-10-18)
+
+The user installed the candidate and reported that it works, then requested closure of this workstream and a move to Goal 2. Record this as user-reported functional acceptance of the 1.0.15.0 delivery, not completion of every physical qualification scenario. The package, source revision `6e5ae32`, artifact hashes and rollback details are recorded below. The working baseline for the visual milestone is 1.0.15.0; retain 1.0.14.0 as the existing rollback package.
+
+Delivered: managed lifecycle/recovery hardening, account-safe recovery, snapshot ordering, renderer monitoring, diagnostics, lock-screen command ownership and pre-roll continuation checks; portable tests and ARM packaging passed. No additional stability implementation is scheduled in this closed delivery.
+
+Residual qualification is explicitly deferred: locked idle discovery/socket-broker feasibility, the complete lock-cycle and network/account/restart matrix, eight-hour playback, overnight idle, and measured power/thermal/resource budgets. The brief user confirmation does not establish which of these passed. Reopen the corresponding section if a symptom recurs or these operating guarantees become an implementation priority. UI work must preserve the accepted playback path and include lock-screen regression checks.
+
+Next workstream: [HIFI_UI_PLAN.md](HIFI_UI_PLAN.md), covering Goal 2 and optional persistent Now Playing presentation. Goal 5's full qualification definition remains below as a reference rather than a claim of completed testing.
 
 ## Scope and baseline
 

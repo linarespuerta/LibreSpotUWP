@@ -1,6 +1,6 @@
 # Lumia HiFi roadmap
 
-The detailed Goal 5 implementation and qualification plan is maintained in [STABILITY_PLAN.md](STABILITY_PLAN.md). It covers lifecycle/background playback, account-safe recovery, network/discovery, renderer health, persistence, and resource/power qualification. Core managed implementation is in progress; local validation and all Lumia physical acceptance remain pending. See the dated checkpoint in the plan for the exact scope.
+The current Goal 5 delivery is closed after user-reported functional acceptance of 1.0.15.0; see [STABILITY_PLAN.md](STABILITY_PLAN.md) for delivered corrections and deferred hardware/soak qualification. This does not establish locked idle discovery or completion of the entire physical matrix. The next workstream is Goal 2, detailed in [HIFI_UI_PLAN.md](HIFI_UI_PLAN.md).
 
 ## M0 — Reproducible baseline
 
