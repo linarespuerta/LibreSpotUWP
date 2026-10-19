@@ -11,6 +11,7 @@ type GetUrlResult = Result<Url, Error>;
 const WEBSOCKET_CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(10);
 macro_rules! error { ($($arg:tt)*) => { let _ = format_args!($($arg)*); }; }
+macro_rules! warn { ($($arg:tt)*) => { let _ = format_args!($($arg)*); }; }
 
 struct TimeoutOnDrop<T>(JoinHandle<T>);
 impl<T> TimeoutOnDrop<T> { fn new(handle: JoinHandle<T>, _: Duration) -> Self { Self(handle) } }
@@ -36,34 +37,37 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test(start_paused = true)]
-    async fn original_run_exits_on_transient_url_error_without_closing_subscription() {
+    async fn transient_url_errors_retry_and_remain_cancellable() {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let shared = Arc::new(DealerShared { closed: Semaphore::new(0), _retained_subscription_sender: sender });
         let calls = Arc::new(AtomicUsize::new(0));
         let attempts = calls.clone();
+        let stop = shared.clone();
         let result = run(shared.clone(), None, move || {
-            attempts.fetch_add(1, Ordering::SeqCst);
+            if attempts.fetch_add(1, Ordering::SeqCst) >= 2 { stop.closed.close(); }
             async { Err("injected transient URL/token failure") }
         }, None).await;
-        assert_eq!(result, Err("injected transient URL/token failure"));
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "there was no retry");
+        assert_eq!(result, Ok(()));
+        assert!(calls.load(Ordering::SeqCst) >= 3, "URL failures stopped retries");
         assert!(matches!(receiver.try_recv(), Err(mpsc::error::TryRecvError::Empty)), "subscription remains open, not disconnected");
-        assert!(!shared.is_closed());
+        assert!(shared.is_closed());
     }
 
     #[tokio::test(start_paused = true)]
-    async fn original_run_retries_socket_error_but_then_exits_on_url_refresh_error() {
+    async fn socket_and_url_refresh_failures_both_retry_until_cancelled() {
         let (sender, _receiver) = mpsc::unbounded_channel();
         let shared = Arc::new(DealerShared { closed: Semaphore::new(0), _retained_subscription_sender: sender });
         let calls = Arc::new(AtomicUsize::new(0));
         let attempts = calls.clone();
         let started = tokio::time::Instant::now();
+        let stop = shared.clone();
         let result = run(shared, None, move || {
             let call = attempts.fetch_add(1, Ordering::SeqCst);
+            if call >= 2 { stop.closed.close(); }
             async move { if call == 0 { Ok("injected endpoint".to_string()) } else { Err("injected transient refresh failure") } }
         }, None).await;
-        assert_eq!(result, Err("injected transient refresh failure"));
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(result, Ok(()));
+        assert!(calls.load(Ordering::SeqCst) >= 3);
         assert!(started.elapsed() >= RECONNECT_INTERVAL, "normal socket error does retry");
     }
 }

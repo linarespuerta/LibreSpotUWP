@@ -1,0 +1,391 @@
+diff --git a/connect/src/spirc.rs b/connect/src/spirc.rs
+index 9cfe2b9..b5f9b09 100644
+--- a/connect/src/spirc.rs
++++ b/connect/src/spirc.rs
+@@ -490,6 +490,7 @@ impl SpircTask {
+         }
+ 
+         let mut state_heartbeat = interval(CONNECT_STATE_HEARTBEAT_INTERVAL);
++        let mut control_health = interval(Duration::from_secs(2));
+         state_heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+         state_heartbeat.tick().await;
+ 
+@@ -510,6 +511,12 @@ impl SpircTask {
+                 (!self.update_state || !state_updates_allowed) && !self.update_volume;
+ 
+             tokio::select! {
++                _ = control_health.tick() => {
++                    if !self.session.dealer().is_running() {
++                        warn!("Dealer worker terminated; ending Spirc so the current account can reconnect");
++                        break;
++                    }
++                },
+                 // startup of the dealer requires a connection_id, which is retrieved at the very beginning
+                 connection_id_update = self.connection_id_update.next() => unwrap! {
+                     connection_id_update,
+@@ -596,11 +603,15 @@ impl SpircTask {
+                     self.update_state = true;
+                 },
+                 _ = async { sleep(VOLUME_UPDATE_DELAY).await }, if self.update_volume => {
++                    #[cfg(target_os = "windows")]
++                    let _network_activity = self.session.dealer().network_activity(2);
+                     self.update_volume = false;
+ 
+                     info!("delayed volume update for all devices: volume is now {}", self.connect_state.device_info().volume);
+-                    if let Err(why) = self.connect_state.notify_volume_changed(&self.session).await {
+-                        error!("error updating connect state for volume update: {why}")
++                    match timeout(CONNECT_STATE_REQUEST_TIMEOUT, self.connect_state.notify_volume_changed(&self.session)).await {
++                        Ok(Ok(_)) => (),
++                        Ok(Err(why)) => error!("error updating connect state for volume update: {why}"),
++                        Err(_) => warn!("timed out publishing volume state"),
+                     }
+ 
+                     // for some reason the web-player does need two separate updates, so that the
+@@ -648,8 +659,10 @@ impl SpircTask {
+         }
+ 
+         // this should clear the active session id, leaving an empty state
+-        if let Err(why) = self.session.spclient().delete_connect_state_request().await {
+-            error!("error during connect state deletion: {why}")
++        match timeout(CONNECT_STATE_REQUEST_TIMEOUT, self.session.spclient().delete_connect_state_request()).await {
++            Ok(Ok(_)) => (),
++            Ok(Err(why)) => error!("error during connect state deletion: {why}"),
++            Err(_) => warn!("timed out deleting Connect state; releasing control transport"),
+         };
+ 
+         self.session.dealer().close().await;
+@@ -918,19 +931,20 @@ impl SpircTask {
+     }
+ 
+     async fn handle_connection_id_update(&mut self, connection_id: String) -> Result<(), Error> {
++        #[cfg(target_os = "windows")]
++        let _network_activity = self.session.dealer().network_activity(3);
+         trace!("Received connection ID update: {connection_id:?}");
+         self.session.set_connection_id(&connection_id);
+ 
+-        let cluster = match self
+-            .connect_state
+-            .notify_new_device_appeared(&self.session)
+-            .await
++        let cluster = match timeout(CONNECT_STATE_REQUEST_TIMEOUT,
++            self.connect_state.notify_new_device_appeared(&self.session)).await
+         {
+-            Ok(res) => Cluster::parse_from_bytes(&res).ok(),
+-            Err(why) => {
++            Ok(Ok(res)) => Cluster::parse_from_bytes(&res).ok(),
++            Ok(Err(why)) => {
+                 error!("{why:?}");
+                 None
+-            }
++            },
++            Err(_) => { warn!("timed out registering Dealer connection ID"); None },
+         }
+         .ok_or(SpircError::FailedDealerSetup)?;
+ 
+@@ -1070,6 +1084,8 @@ impl SpircTask {
+         &mut self,
+         (request, sender): RequestReply,
+     ) -> Result<(), Error> {
++        #[cfg(target_os = "windows")]
++        let _network_activity = self.session.dealer().network_activity(1);
+         self.connect_state.set_last_command(request.clone());
+ 
+         debug!(
+@@ -1085,6 +1101,11 @@ impl SpircTask {
+             }
+         };
+ 
++        // Finish the resulting publication while the control-channel wake
++        // still owns a network-requesting task, before acknowledging the command.
++        if let Err(why) = self.notify().await {
++            warn!("command state publication failed: {why}");
++        }
+         sender.send(response).map_err(Into::into)
+     }
+ 
+@@ -1988,6 +2009,8 @@ impl SpircTask {
+     }
+ 
+     async fn notify(&mut self) -> Result<(), Error> {
++        #[cfg(target_os = "windows")]
++        let _network_activity = self.session.dealer().network_activity(2);
+         self.connect_state.set_status(&self.play_status);
+ 
+         if self.connect_state.is_playing() {
+diff --git a/core/src/dealer/manager.rs b/core/src/dealer/manager.rs
+index 98ea026..7c08f1b 100644
+--- a/core/src/dealer/manager.rs
++++ b/core/src/dealer/manager.rs
+@@ -82,6 +82,16 @@ impl RequestHandler for DealerRequestHandler {
+ }
+ 
+ impl DealerManager {
++    pub fn is_running(&self) -> bool {
++        self.lock(|inner| inner.dealer.get().is_some_and(|dealer| !dealer.handle.is_finished()))
++    }
++    #[cfg(target_os = "windows")]
++    pub fn network_activity(&self, kind: u32) -> Option<super::uwp_transport::NetworkActivity> {
++        let id = self.lock(|inner| inner.dealer.get().map(|dealer|
++            dealer.shared.uwp_id.load(std::sync::atomic::Ordering::Acquire))).unwrap_or(0);
++        super::uwp_transport::network_activity(id, kind)
++    }
++
+     async fn get_url(session: Session) -> GetUrlResult {
+         let (host, port) = session.apresolver().resolve("dealer").await?;
+         let token = session.login5().auth_token().await?.access_token;
+diff --git a/core/src/dealer/mod.rs b/core/src/dealer/mod.rs
+index 63ee6e7..9758d0b 100644
+--- a/core/src/dealer/mod.rs
++++ b/core/src/dealer/mod.rs
+@@ -1,6 +1,8 @@
+ pub mod manager;
+ mod maps;
+ pub mod protocol;
++#[cfg(target_os = "windows")]
++pub mod uwp_transport;
+ 
+ use std::{
+     iter,
+@@ -268,6 +270,8 @@ macro_rules! create_dealer {
+                     message_handlers: Mutex::new(builder.message_handlers),
+                     request_handlers: Mutex::new(builder.request_handlers),
+                     notify_drop: Semaphore::new(0),
++                    #[cfg(target_os = "windows")]
++                    uwp_id: std::sync::atomic::AtomicU64::new(0),
+                 });
+ 
+                 let handle = {
+@@ -328,6 +332,8 @@ impl Builder {
+ }
+ 
+ struct DealerShared {
++    #[cfg(target_os = "windows")]
++    uwp_id: std::sync::atomic::AtomicU64,
+     message_handlers: Mutex<SubscriberMap<MessageHandler>>,
+     request_handlers: Mutex<HandlerMap<Box<dyn RequestHandler>>>,
+ 
+@@ -501,6 +507,10 @@ async fn connect(
+     proxy: Option<&Url>,
+     shared: &Arc<DealerShared>,
+ ) -> WsResult<(JoinHandle<()>, JoinHandle<()>)> {
++    #[cfg(target_os = "windows")]
++    if proxy.is_none() && uwp_transport::is_registered() {
++        return uwp_transport::connect(address, shared).await;
++    }
+     let host = address
+         .host_str()
+         .ok_or(WsError::Url(UrlError::NoHostName))?;
+@@ -698,18 +708,34 @@ where
+                 }
+             }
+             _ => {
+-                let url = select! {
++                let url_result = select! {
+                     () = shared.closed() => {
+                         break
+                     },
+                     e = get_url() => e
+-                }?;
++                };
++                let url = match url_result {
++                    Ok(url) => url,
++                    Err(_) => {
++                        // Endpoint/token refresh can fail transiently in standby.
++                        // Do not strand Spirc with retained, silent subscriptions.
++                        warn!("Dealer endpoint refresh failed; retrying with the current session");
++                        select! {
++                            () = shared.closed() => break,
++                            () = tokio::time::sleep(RECONNECT_INTERVAL) => (),
++                        }
++                        continue;
++                    }
++                };
+ 
+                 match connect(&url, proxy.as_ref(), &shared).await {
+                     Ok((s, r)) => tasks = (init_task(s), init_task(r)),
+                     Err(e) => {
+                         error!("Error while connecting: {e}");
+-                        tokio::time::sleep(RECONNECT_INTERVAL).await;
++                        select! {
++                            () = shared.closed() => break,
++                            () = tokio::time::sleep(RECONNECT_INTERVAL) => (),
++                        }
+                     }
+                 }
+             }
+diff --git a/core/src/dealer/uwp_transport.rs b/core/src/dealer/uwp_transport.rs
+new file mode 100644
+index 0000000..19ad8d2
+--- /dev/null
++++ b/core/src/dealer/uwp_transport.rs
+@@ -0,0 +1,111 @@
++//! Optional host-owned WinRT WebSocket transport. Dealer framing, credentials,
++//! session ownership and protocol dispatch remain in Rust.
++use super::*;
++use std::{collections::HashMap, ffi::CString, sync::{OnceLock, RwLock, atomic::AtomicU64}};
++use tokio::sync::oneshot;
++
++pub type OpenCallback = extern "C" fn(u64, *const std::ffi::c_char) -> bool;
++pub type SendCallback = extern "C" fn(u64, *const u8, usize) -> bool;
++pub type CloseCallback = extern "C" fn(u64);
++pub type ActivityCallback = extern "C" fn(u64, u32, bool);
++
++#[derive(Clone, Copy)]
++pub struct Callbacks { pub open: OpenCallback, pub send: SendCallback, pub close: CloseCallback, pub activity: ActivityCallback }
++static CALLBACKS: RwLock<Option<Callbacks>> = RwLock::new(None);
++static NEXT_ID: AtomicU64 = AtomicU64::new(1);
++const MAX_FRAME_BYTES: usize = 2 * 1024 * 1024;
++struct Client {
++    ready: Option<oneshot::Sender<bool>>,
++    frames: mpsc::Sender<String>,
++}
++static CLIENTS: OnceLock<Mutex<HashMap<u64, Client>>> = OnceLock::new();
++fn clients() -> &'static Mutex<HashMap<u64, Client>> { CLIENTS.get_or_init(|| Mutex::new(HashMap::new())) }
++
++pub fn register(callbacks: Callbacks) { *CALLBACKS.write().expect("transport callback lock") = Some(callbacks); }
++pub fn is_registered() -> bool { CALLBACKS.read().expect("transport callback lock").is_some() }
++
++pub struct NetworkActivity { id: u64, kind: u32, callback: ActivityCallback }
++pub fn network_activity(id: u64, kind: u32) -> Option<NetworkActivity> {
++    let callbacks = *CALLBACKS.read().expect("transport callback lock");
++    callbacks.filter(|_| id != 0).map(|callbacks| {
++        (callbacks.activity)(id, kind, true);
++        NetworkActivity { id, kind, callback: callbacks.activity }
++    })
++}
++impl Drop for NetworkActivity { fn drop(&mut self) { (self.callback)(self.id, self.kind, false); } }
++
++/// kind: 0=closed/failed, 1=connected, 2=UTF-8 text. Buffer is copied before return.
++pub unsafe fn push(id: u64, kind: u32, data: *const u8, length: usize) -> bool {
++    let mut clients = clients().lock().expect("transport clients lock");
++    if kind == 0 { return clients.remove(&id).is_some(); }
++    let Some(client) = clients.get_mut(&id) else { return false; };
++    if kind == 1 { if let Some(ready) = client.ready.take() { return ready.send(true).is_ok(); } return true; }
++    if kind != 2 || data.is_null() || length > MAX_FRAME_BYTES { return false; }
++    let Ok(text) = std::str::from_utf8(unsafe { std::slice::from_raw_parts(data, length) }) else { return false; };
++    client.frames.try_send(text.to_owned()).is_ok()
++}
++
++struct Lease { id: u64, callbacks: Callbacks }
++impl Drop for Lease {
++    fn drop(&mut self) {
++        clients().lock().expect("transport clients lock").remove(&self.id);
++        (self.callbacks.close)(self.id);
++    }
++}
++
++pub(super) async fn connect(address: &Url, shared: &Arc<DealerShared>) -> WsResult<(JoinHandle<()>, JoinHandle<()>)> {
++    let callbacks = CALLBACKS.read().expect("transport callback lock").ok_or_else(|| Error::unavailable("UWP transport is not registered"))?;
++    let id = NEXT_ID.fetch_add(1, atomic::Ordering::Relaxed);
++    shared.uwp_id.store(id, atomic::Ordering::Release);
++    let (ready_tx, ready_rx) = oneshot::channel();
++    let (frame_tx, mut frame_rx) = mpsc::channel(16);
++    clients().lock().expect("transport clients lock").insert(id, Client { ready: Some(ready_tx), frames: frame_tx });
++    let lease = Arc::new(Lease { id, callbacks });
++    let url = CString::new(address.as_str()).map_err(|_| Error::invalid_argument("invalid dealer URL"))?;
++    if !(callbacks.open)(id, url.as_ptr()) { return Err(Error::unavailable("UWP transport rejected open")); }
++    select! {
++        () = shared.closed() => return Err(Error::cancelled("dealer closed during WinRT connection")),
++        result = tokio::time::timeout(Duration::from_secs(20), ready_rx) => {
++            if !matches!(result, Ok(Ok(true))) { return Err(Error::unavailable("UWP control-channel connection failed")); }
++        }
++    }
++    info!("Dealer WinRT control channel connected");
++    let (send_tx, mut send_rx) = mpsc::unbounded_channel::<WsMessage>();
++    let outgoing_shared = shared.clone();
++    let outgoing_lease = lease.clone();
++    let send_task = tokio::spawn(async move {
++        loop {
++            select! {
++                () = outgoing_shared.closed() => break,
++                msg = send_rx.recv() => match msg {
++                    Some(WsMessage::Text(text)) => {
++                        if !(callbacks.send)(id, text.as_ptr(), text.len()) { break; }
++                    }
++                    Some(WsMessage::Close(_)) | None => break,
++                    _ => (), // WinRT/CCT owns WebSocket ping/pong, not a second timer.
++                }
++            }
++        }
++        (callbacks.close)(id);
++        drop(outgoing_lease);
++    });
++    let incoming_shared = shared.clone();
++    let receive_task = tokio::spawn(async move {
++        loop {
++            select! {
++                () = incoming_shared.closed() => break,
++                text = frame_rx.recv() => match text {
++                    Some(text) => match serde_json::from_str(&text) {
++                        Ok(message) => incoming_shared.dispatch(message, &send_tx),
++                        Err(_) => warn!("Invalid Dealer frame from WinRT transport"),
++                    },
++                    None => break,
++                }
++            }
++        }
++        warn!("Dealer WinRT control channel ended");
++        let _ = send_tx.send(WsMessage::Close(None));
++        drop(lease);
++    });
++    Ok((send_task, receive_task))
++}
+diff --git a/core/src/util.rs b/core/src/util.rs
+index 04a3366..945cafb 100644
+--- a/core/src/util.rs
++++ b/core/src/util.rs
+@@ -56,6 +56,10 @@ impl<T: Send + 'static> TimeoutOnDrop<T> {
+     pub fn take(&mut self) -> Option<JoinHandle<T>> {
+         self.handle.take()
+     }
++
++    pub fn is_finished(&self) -> bool {
++        self.handle.as_ref().is_none_or(|handle| handle.is_finished())
++    }
+ }
+ 
+ impl<T: Send + 'static> Future for TimeoutOnDrop<T> {
+diff --git a/src/lib.rs b/src/lib.rs
+index af9f6e1..7f39d14 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -3,6 +3,23 @@ mod ffi_types;
+ mod logger;
+ mod runner;
+ 
++#[cfg(target_os = "windows")]
++#[unsafe(no_mangle)]
++pub extern "C" fn librespot_dealer_register_transport(
++    open: librespot_core::dealer::uwp_transport::OpenCallback,
++    send: librespot_core::dealer::uwp_transport::SendCallback,
++    close: librespot_core::dealer::uwp_transport::CloseCallback,
++    activity: librespot_core::dealer::uwp_transport::ActivityCallback,
++) {
++    librespot_core::dealer::uwp_transport::register(librespot_core::dealer::uwp_transport::Callbacks { open, send, close, activity });
++}
++
++#[cfg(target_os = "windows")]
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn librespot_dealer_push_frame(id: u64, kind: u32, data: *const u8, length: usize) -> bool {
++    unsafe { librespot_core::dealer::uwp_transport::push(id, kind, data, length) }
++}
++
+ use crate::ffi_types::*;
+ use crate::runner::{
+     AppDataPayload, LibrespotCommand, Runner, RunnerState, alloc_ffi_album, alloc_ffi_artist,
+diff --git a/src/runner.rs b/src/runner.rs
+index 605b9dd..14bbf04 100644
+--- a/src/runner.rs
++++ b/src/runner.rs
+@@ -830,6 +830,11 @@ impl Runner {
+                 }
+ 
+                 _ = sleep_until(next_connect_attempt), if connecting && last_creds.is_some() => {
++                    // Release the previous WinRT control slot before replacing
++                    // its Spirc future. Dropping an unpolled shutdown command
++                    // alone does not run the old task's asynchronous cleanup.
++                    if let Some(s) = spirc.take() { let _ = s.shutdown(); }
++                    session.dealer().close().await;
+                     // A Session owns one authenticated AP connection. Its
+                     // connection channel is initialized with OnceLock, so it
+                     // cannot be reused for a Zeroconf user switch (or for a

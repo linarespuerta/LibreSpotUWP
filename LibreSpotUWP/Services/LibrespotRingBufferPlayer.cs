@@ -13,6 +13,7 @@ using Windows.Media.Audio;
 using Windows.Media.Devices;
 using Windows.Media.MediaProperties;
 using Windows.Media.Render;
+using Windows.Media.Playback;
 using static LibreSpotUWP.Interop.Librespot;
 
 namespace LibreSpotUWP.Services
@@ -43,6 +44,9 @@ namespace LibreSpotUWP.Services
         private readonly ProducerHealthMonitor _producerHealth = new ProducerHealthMonitor();
         private readonly RendererHealthMonitor _rendererHealth = new RendererHealthMonitor();
         private AudioGraph _graph;
+        private readonly MediaPlayer _platformPlayer;
+        private PlatformPcmSource _platformSource;
+        private PcmStreamTimeline _platformReadPolicy;
         private AudioFrameInputNode _inputNode;
         private EchoEffectDefinition _echoEffect;
         private EqualizerEffectDefinition _equalizerEffect;
@@ -145,10 +149,11 @@ namespace LibreSpotUWP.Services
             public void Dispose() => Frame.Dispose();
         }
 
-        public LibrespotRingBufferPlayer(AudioEncodingProperties props, string outputDeviceId)
+        public LibrespotRingBufferPlayer(AudioEncodingProperties props, string outputDeviceId, MediaPlayer platformPlayer = null)
         {
             _props = props;
             _outputDeviceId = outputDeviceId ?? string.Empty;
+            _platformPlayer = platformPlayer;
             _graphInstanceId = Interlocked.Increment(ref _nextGraphInstanceId);
         }
 
@@ -182,6 +187,22 @@ namespace LibreSpotUWP.Services
                 _frameSize = (int)(_props.ChannelCount * (_props.BitsPerSample / 8));
                 var preRollBytes = MillisecondsToAlignedBytes(PreRollMilliseconds);
                 _transitionState = new AudioTransitionStateMachine((ulong)preRollBytes);
+
+                if (_platformPlayer != null)
+                {
+                    _platformReadPolicy = new PcmStreamTimeline((int)_props.SampleRate, (int)_props.ChannelCount, (int)_props.BitsPerSample);
+                    var platformOutput = await TryGetOutputDeviceAsync(_outputDeviceId);
+                    ThrowIfDisposed();
+                    _platformPlayer.AudioDevice = platformOutput;
+                    _platformSource = new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes);
+                    _platformPlayer.Source = _platformSource.Source;
+                    _transitionTimer = new Timer(_ => RunTransitionPoll(), null, Timeout.Infinite, Timeout.Infinite);
+                    _producerWatchdogTimer = new Timer(_ => CheckProducerHealth(), null, Timeout.Infinite, Timeout.Infinite);
+                    Interlocked.Exchange(ref _graphCounted, 1);
+                    Interlocked.Increment(ref _liveGraphCount);
+                    LogService.Info($"Platform PCM renderer initialized; sampleRate={_props.SampleRate}, channels={_props.ChannelCount}, bits={_props.BitsPerSample}, frameBytes={_frameSize}, capacityBytes={_capacityBytes}. Native rendering and AudioGraph are disabled.");
+                    return;
+                }
 
                 var settings = new AudioGraphSettings(AudioRenderCategory.Media)
                 {
@@ -613,6 +634,7 @@ namespace LibreSpotUWP.Services
                 CompletePlaybackReadyLocked(false);
             }
             Interlocked.Exchange(ref _consumerEnabled, 0);
+            _platformSource?.SetEnabled(false);
             ResetPlaybackExpectation(false);
 
             // Keep the AudioGraph alive for an ordinary pause. Stopping a live UWP
@@ -712,7 +734,8 @@ namespace LibreSpotUWP.Services
                         librespot_audio_set_read_sequence(evaluation.ActiveStartSequence);
                     }
 
-                    Interlocked.Exchange(ref _activeGeneration, (long)evaluation.ActiveGeneration);
+                    if (Interlocked.Exchange(ref _activeGeneration, (long)evaluation.ActiveGeneration) != (long)evaluation.ActiveGeneration)
+                        _platformSource?.MarkDiscontinuity();
                     Interlocked.Exchange(ref _activeBoundarySequence, -1);
                     UpdateMin(ref _transitionMinimumAvailableBytes, (long)evaluation.AvailableBytes);
 
@@ -758,7 +781,7 @@ namespace LibreSpotUWP.Services
             await _lifecycleGate.WaitAsync();
             try
             {
-                if (Volatile.Read(ref _disposed) != 0 || _inputNode == null)
+                if (Volatile.Read(ref _disposed) != 0 || (_inputNode == null && _platformSource == null))
                     return false;
 
                 lock (_transitionLock)
@@ -768,15 +791,18 @@ namespace LibreSpotUWP.Services
                     {
                         return false;
                     }
+                    if (running && !_transitionState.DesiredPlaying)
+                        return false;
                 }
 
                 if (running)
                 {
                     Interlocked.Exchange(ref _consumerEnabled, 1);
                     if (Interlocked.CompareExchange(ref _graphRunning, 1, 0) == 0)
-                        _graph.Start();
+                        _graph?.Start();
                     if (Interlocked.CompareExchange(ref _inputNodeRunning, 1, 0) == 0)
-                        _inputNode.Start();
+                        _inputNode?.Start();
+                    _platformSource?.SetEnabled(true);
                     _telemetryTimer?.Change(TelemetryIntervalMs, TelemetryIntervalMs);
                     _producerWatchdogTimer?.Change(ProducerWatchdogIntervalMs, ProducerWatchdogIntervalMs);
                 }
@@ -784,9 +810,10 @@ namespace LibreSpotUWP.Services
                 {
                     Interlocked.Exchange(ref _consumerEnabled, 0);
                     if (Interlocked.CompareExchange(ref _inputNodeRunning, 0, 1) == 1)
-                        _inputNode.Stop();
+                        _inputNode?.Stop();
                     if (Interlocked.CompareExchange(ref _graphRunning, 0, 1) == 1)
-                        _graph.Stop();
+                        _graph?.Stop();
+                    _platformSource?.SetEnabled(false);
                     _telemetryTimer?.Change(Timeout.Infinite, Timeout.Infinite);
                     if (!_producerHealth.Snapshot.PlaybackExpected)
                         _producerWatchdogTimer?.Change(Timeout.Infinite, Timeout.Infinite);
@@ -987,6 +1014,59 @@ namespace LibreSpotUWP.Services
             };
         }
 
+        private byte[] ReadPlatformPcm(int maximumBytes)
+        {
+            if (!_callbackLifetime.TryEnter()) return null;
+            try
+            {
+                lock (_transitionLock)
+                {
+                    if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _consumerEnabled) == 0)
+                        return null;
+                    var producer = GetProducerState();
+                    var read = (ulong)Math.Max(0, Volatile.Read(ref _readSequence));
+                    var boundary = Volatile.Read(ref _activeBoundarySequence);
+                    if (producer.Generation != (ulong)Math.Max(0, Volatile.Read(ref _activeGeneration)))
+                        boundary = boundary < 0 ? (long)producer.GenerationStartSequence : Math.Min(boundary, (long)producer.GenerationStartSequence);
+                    int bytes = _platformReadPolicy.AlignedReadLength(read, producer.WriteSequence,
+                        _capacityBytes, boundary < 0 ? ulong.MaxValue : (ulong)boundary, maximumBytes);
+                    if (bytes == 0) return null;
+                    var data = new byte[bytes];
+                    int offset = (int)(read % (ulong)_capacityBytes);
+                    int first = Math.Min(bytes, _capacityBytes - offset);
+                    Marshal.Copy(IntPtr.Add(_bufferPtr, offset), data, 0, first);
+                    if (first < bytes) Marshal.Copy(_bufferPtr, data, first, bytes - first);
+                    // The platform owns a copy before the producer may overwrite it.
+                    var next = read + (ulong)bytes;
+                    Interlocked.Exchange(ref _readSequence, (long)next);
+                    librespot_audio_set_read_sequence(next);
+                    return data;
+                }
+            }
+            finally { _callbackLifetime.Exit(); }
+        }
+
+        private int GetPlatformAvailableBytes()
+        {
+            if (!_callbackLifetime.TryEnter()) return 0;
+            try
+            {
+                lock (_transitionLock)
+                {
+                    if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _consumerEnabled) == 0)
+                        return 0;
+                    var producer = GetProducerState();
+                    var read = (ulong)Math.Max(0, Volatile.Read(ref _readSequence));
+                    var boundary = Volatile.Read(ref _activeBoundarySequence);
+                    if (producer.Generation != (ulong)Math.Max(0, Volatile.Read(ref _activeGeneration)))
+                        boundary = boundary < 0 ? (long)producer.GenerationStartSequence : Math.Min(boundary, (long)producer.GenerationStartSequence);
+                    return _platformReadPolicy.AlignedReadLength(read, producer.WriteSequence,
+                        _capacityBytes, boundary < 0 ? ulong.MaxValue : (ulong)boundary, _capacityBytes);
+                }
+            }
+            finally { _callbackLifetime.Exit(); }
+        }
+
         private static long GetMonotonicMilliseconds()
         {
             return (long)(Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency);
@@ -1090,6 +1170,9 @@ namespace LibreSpotUWP.Services
 
                 Interlocked.Exchange(ref _disposed, 1);
                 Interlocked.Exchange(ref _consumerEnabled, 0);
+                _platformSource?.Dispose();
+                if (_platformPlayer != null && ReferenceEquals(_platformPlayer.Source, _platformSource?.Source))
+                    _platformPlayer.Source = null;
                 _disposeTask = Task.Run(DisposeCore);
                 return _disposeTask;
             }

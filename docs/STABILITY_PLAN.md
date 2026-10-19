@@ -372,3 +372,28 @@ Changes now in the working tree:
 - S6: memory samples and existing bounded audio/queue diagnostics provide initial soak evidence. Resource budgets and all long-run results still require measurement on the Lumia.
 
 Automated coverage added for owner/guest recovery authorization, snapshot resume ownership, producer-versus-consumer stall classification, lifecycle/recovery wiring, and log secret redaction. The portable playback suite passed; its Login Helper source audit was skipped because that sibling checkout is absent. The managed UWP `Release|ARM` solution build passed without creating an APPX. Windows 10 Mobile lock/unlock, account transfer, Wi-Fi recovery, APPX installation, and soak acceptance remain unverified until exercised on the Lumia. No native Rust change or APPX deployment is part of this code slice. See `TEST_PLAN.md` for exact commands and results.
+## 2026-10-18 — Durable lock-screen control implementation (1.0.16.0 candidate)
+
+Status: implemented and covered by host tests; **physical Lumia acceptance remains open**. Do not close the stability goal on the strength of compilation or an unlocked transfer.
+
+### Implemented architecture
+
+- New opt-in **Windows streaming (background audio)** backend (`PlatformMedia`). The existing backend remains the default/rollback. Native decoding feeds the existing bounded ring buffer; its real PCM is consumed by MediaStreamSource/MediaPlayer, not a second renderer or fabricated silence. Frame-aligned reads, live timestamps, discontinuities, float format handling, cancellation and transition boundaries preserve the existing producer protocol. App-side audio effects are unavailable in this backend.
+- PlatformMedia installs an additive native/managed bridge for the **actual authenticated Dealer MessageWebSocket**. ControlChannelTrigger owns that socket; push tasks request network and keepalive uses the OS entrypoint. Mobile requires a hardware slot; allocation failure is reported rather than silently claiming background support.
+- A bounded wake deferral tracks registration, native command handling/state publication and the stored protocol reply. Channels drain concurrently under their individual 20-second limit. Queues/frame sizes/connections are bounded; cancellation closes the transport. No periodic lease, silent audio, token logging or owner-account fallback was added.
+- Native Dealer retries transient endpoint-refresh errors and reports terminated workers. SPIRC detects lost workers; account replacement closes the prior Dealer before replacing its session. Native work guards keep state publication and replies inside the network-requesting task.
+- Renderer replacement disposes the prior ring reader before creating its successor. Recovery preserves pause intent, session ownership and the existing owner/guest authorization boundary. Latest control-channel loss produces a diagnostic status.
+- Native source commit: `b62320452eb02621f0c2315cdabaae8ea412c5fd`. Reproducible source delta is tracked in `native-patches/0001-uwp-background-control.patch`; no write was made to the third-party native origin.
+
+### Activation and physical acceptance
+
+1. Install 1.0.16.0; choose **Windows streaming (background audio)** in Settings. Close/reopen once so the next authenticated Dealer is created through the new transport, then transfer playback from the controller.
+2. Confirm the device trace reports the WinRT transport and successful **hardware** control-channel allocation. A build alone cannot establish Mobile firmware support. Check background activity permission/Battery Saver restrictions if denied.
+3. Lock only the controller, then only the Lumia, then both. At 30 seconds, 2 minutes and 10 minutes test pause/play, next/previous, seek and volume. Repeat first-lock immediately after playback begins.
+4. Cross at least three natural track boundaries while locked, including a guest Premium account transfer. The controller must remain authoritative, not merely display a moving timeline. Repeat a paused interval followed by a remote Play while locked.
+5. Test Wi-Fi loss/return and foreground return: bounded reconnect, no duplicate renderer, no stale owner takeover, no unexpected autoplay after Pause. Run a 60-minute locked soak and compare memory/task/socket counts.
+6. Correlate redacted logs with controller timestamps. Failure criteria include socket allocation rejection, OS network-unreachable errors, lost replies, independent sessions, or stopping at track end. Keep 1.0.15.0 available for rollback.
+
+### Explicit remaining boundary
+
+This implements authenticated control/background playback, **not brokered idle fresh-account Zeroconf discovery**. Native mDNS/TCP listeners remain unchanged. New-account discovery while locked and idle is a separate acceptance item and may require a supported listener-broker design; do not infer it from Dealer wake success. The actual WinRT API/firmware behavior, audio quality and all lock/soak results remain unverified until measured on the Lumia.

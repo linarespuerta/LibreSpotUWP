@@ -39,6 +39,11 @@ internal static class Program
             LiveTileUpdatesAreImmediateAndDurable,
             BackgroundingPreservesActiveLocalPlayback,
             LockScreenCommandsHaveOnePlaybackOwner,
+            PlatformPcmTimelinePreservesFramesAndBoundaries,
+            PlatformPcmRejectsOverrunAndInvalidFormats,
+            ControlWakeWaitsForNativeWorkAndStoredReply,
+            ControlWakeCancellationAndBacklogAreBounded,
+            PlatformMediaWiringUsesRealPcmAndScopedNetworkWork,
             RepetitiveTelemetryProducesOneSinkEntry,
             PlaybackEventStormCreatesOnePendingDispatcherItem,
             MetadataAndLyricsCompletionCannotOutliveNavigation,
@@ -182,15 +187,15 @@ internal static class Program
             "_ringPlayer = replacementPlayer",
             createReplacement,
             StringComparison.Ordinal);
-        var disposePrevious = media.IndexOf(
+        var disposePrevious = media.LastIndexOf(
             "await previousPlayer.DisposeAsync()",
-            publishReplacement,
+            createReplacement,
             StringComparison.Ordinal);
         Assert(createReplacement >= 0 &&
                publishReplacement > createReplacement &&
-               disposePrevious > publishReplacement,
-            "audio output replacement is not committed before the previous player is disposed");
-        Assert(media.Contains("liveNativeSwitch={backend != AudioBackendKind.RingBuffer}") &&
+               disposePrevious >= 0 && disposePrevious < createReplacement,
+            "replacement must release the old ring consumer before creating a new one");
+        Assert(media.Contains("liveNativeSwitch={backend != AudioBackendKind.RingBuffer && backend != AudioBackendKind.PlatformMedia}") &&
                media.Contains("UserSettings.AudioOutputDeviceId = deviceId;") &&
                media.Contains("(_ringPlayer as NativeWindowsAudioPlayer)?.CommitOutputDevice(deviceId)"),
             "native output-device changes do not update both the renderer and its managed controller");
@@ -869,6 +874,110 @@ internal static class Program
                guard.Contains("playbackEvent.SessionGeneration == _librespot.SessionGeneration") &&
                guard.Contains("IsEventForActiveGeneration") && guard.Contains("IsEventForPendingTransition"),
             "pre-roll completion can publish after pause, transfer, disposal or session replacement");
+    }
+
+    private static void PlatformPcmTimelinePreservesFramesAndBoundaries()
+    {
+        var timeline = new PcmStreamTimeline(44100, 2, 24);
+        Assert(timeline.FrameBytes == 6, "packed 24-bit stereo is not a six-byte frame");
+        Assert(timeline.AlignedReadLength(0, 5293, 131072, ulong.MaxValue, 6000) == 5292,
+            "partial sample frames must remain in the ring");
+        Assert(timeline.AlignedReadLength(131070, 131088, 131072, 131082, 5292) == 12,
+            "a wrapping ring read must stop at the replacement-generation boundary");
+        Assert(timeline.AlignedReadLength(131082, 131088, 131072, 131082, 5292) == 0,
+            "new-generation audio escaped before the transition was accepted");
+        long durationTicks = 0;
+        for (int i = 0; i < 100000; i++) durationTicks += timeline.Advance(5292).Ticks;
+        Assert(durationTicks == TimeSpan.FromSeconds(2000).Ticks && timeline.Position.Ticks == durationTicks,
+            "PCM sample timestamps drifted during long playback");
+        Assert(timeline.BufferedEnd(5292) - timeline.Position == TimeSpan.FromMilliseconds(20),
+            "buffered range does not reflect the actual available frames");
+        var padded = new PcmStreamTimeline(44100, 2, 32);
+        Assert(padded.FrameBytes == 8, "32-bit container must not be confused with packed 24-bit");
+    }
+
+    private static void PlatformPcmRejectsOverrunAndInvalidFormats()
+    {
+        var timeline = new PcmStreamTimeline(44100, 2, 24);
+        bool overrun = false, format = false, alignment = false;
+        try { timeline.AlignedReadLength(0, 131073, 131072, ulong.MaxValue, 5292); }
+        catch (InvalidOperationException) { overrun = true; }
+        try { new PcmStreamTimeline(44100, 2, 64); }
+        catch (ArgumentOutOfRangeException) { format = true; }
+        try { timeline.Advance(7); }
+        catch (ArgumentOutOfRangeException) { alignment = true; }
+        Assert(overrun && format && alignment, "invalid PCM data was accepted by the platform-source policy");
+        Assert(timeline.AlignedReadLength(10, 9, 131072, ulong.MaxValue, 5292) == 0,
+            "obsolete producer state allowed a negative read");
+        Assert(timeline.FramesDelivered == 0, "failed input advanced the stream clock");
+    }
+
+    private static void ControlWakeWaitsForNativeWorkAndStoredReply()
+    {
+        var work = new ControlWorkTracker();
+        Assert(!work.IsIdle && !work.Pending.IsCompleted, "connection registration was not included in wake ownership");
+        work.RegistrationCompleted();
+        Assert(work.IsIdle, "registration did not release idle work");
+        Assert(work.TrackReply("pause-1"), "remote request was not tracked");
+        work.Begin();
+        work.Begin(); // command execution plus bounded state publication
+        var pending = work.Pending;
+        work.End();
+        work.ReplyStored("pause-1");
+        Assert(!work.IsIdle && !pending.IsCompleted, "reply receipt prematurely released native publication");
+        work.End();
+        pending.GetAwaiter().GetResult();
+        Assert(work.IsIdle, "native command/publication completion did not release the wake");
+        work.Begin();
+        work.TrackReply("next-2");
+        work.End();
+        Assert(!work.IsIdle, "queued but unstored reply was treated as completed");
+        work.ReplyStored("next-2");
+        Assert(work.IsIdle, "stored reply did not finish the work");
+    }
+
+    private static void ControlWakeCancellationAndBacklogAreBounded()
+    {
+        var work = new ControlWorkTracker();
+        work.RegistrationCompleted();
+        for (int i = 0; i < 32; i++) Assert(work.TrackReply("reply-" + i), "reply budget is smaller than declared");
+        Assert(!work.TrackReply("overflow"), "unbounded reply backlog was accepted");
+        Assert(work.TrackReply("reply-0"), "duplicate request consumed another backlog entry");
+        work.Begin();
+        var oldWait = work.Pending;
+        work.Close();
+        oldWait.GetAwaiter().GetResult();
+        work.End();
+        work.Begin();
+        Assert(work.IsIdle && !work.TrackReply("late") && work.Pending.IsCompleted,
+            "closed channel retained work or accepted a late-session reply");
+    }
+
+    private static void PlatformMediaWiringUsesRealPcmAndScopedNetworkWork()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "PlatformPcmSource.cs"));
+        var ring = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "LibrespotRingBufferPlayer.cs"));
+        var transport = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "WinRtDealerTransport.cs"));
+        var native = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "NativeWindowsAudioPlayer.cs"));
+        Assert(source.Contains("_read(_sampleBytes)") && source.Contains("data.AsBuffer()") &&
+               source.Contains("SetBufferedRange") && source.Contains("ReportSampleProgress(0)") &&
+               !source.Contains("FromHours(24)"), "platform stream still substitutes synthetic silence for decoded PCM");
+        Assert(source.Contains("_lifetime.Cancel()") && source.Contains("deferral.Complete()") &&
+               source.Contains("Interlocked.Increment(ref _pendingRequests) > 2"), "sample request ownership is unbounded");
+        Assert(native.Contains("backend == AudioBackendKind.PlatformMedia ? AudioBackendKind.RingBuffer") &&
+               ring.Contains("new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes)") &&
+               ring.Contains("Marshal.Copy") && ring.Contains("_platformSource?.Dispose()"),
+            "platform rendering is not mapped to the existing native ring and an owned PCM copy");
+        Assert(transport.Contains("_trigger.UsingTransport(_socket)") && transport.Contains("IsNetworkRequested = true") &&
+               transport.Contains("_work.Pending") && transport.Contains("_work.ReplyStored(key)") &&
+               transport.Contains("_pushTask?.Unregister(true)") && transport.Contains("Push(id, 0)"),
+            "control transport is not bound to actual scoped background network/reply lifetime");
+        foreach (var theme in new[] { "Win10_1507", "Win10_1709", "Win11" })
+        {
+            var xaml = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Views", theme, "SettingsPage_" + theme + ".xaml"));
+            Assert(xaml.Contains("Tag=\"PlatformMedia\""), "platform backend is missing from " + theme);
+        }
     }
 
     private static void RepetitiveTelemetryProducesOneSinkEntry()

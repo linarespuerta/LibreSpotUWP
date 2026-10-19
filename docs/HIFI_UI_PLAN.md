@@ -102,3 +102,6 @@ Primary Microsoft documentation reviewed on 2026-10-18. Verify runtime availabil
 - [DisplayRequest](https://learn.microsoft.com/en-us/uwp/api/windows.system.display.displayrequest): balance each active request with release; this does not replace lock-screen lifecycle handling.
 - [BitmapImage](https://learn.microsoft.com/en-us/uwp/api/windows.ui.xaml.media.imaging.bitmapimage): decode dimensions and image completion/failure handling for bounded artwork loading.
 - [ApplicationView](https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.applicationview): fullscreen/view APIs are candidates to check on the installed Mobile build, not assumed supported behavior.
+## Stability dependency — 2026-10-18
+
+The 1.0.16.0 opt-in Windows streaming backend and WinRT Dealer control bridge must pass the physical lock/control/natural-track-boundary matrix in STABILITY_PLAN.md before visual work can treat stability as closed. Existing rendering remains a rollback. Do not promise app-side effects on PlatformMedia or confuse authenticated control with idle locked Zeroconf discovery.

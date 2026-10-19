@@ -1,5 +1,13 @@
 # Test plan
 
+## 2026-10-18 — Background control/real PCM candidate
+
+- Portable playback suite: PASS, including PCM frame/timestamp/boundary/overrun tests, bounded control work and stored-reply completion, and source wiring checks. Existing account, recovery, transition and cancellation cases pass. Login Helper sibling source audit: SKIP (checkout absent).
+- `cargo test --offline --manifest-path tests/DealerLivenessProbe/Cargo.toml`: PASS (2). Extracts production Dealer run loop; transient URL/socket failures retry and remain cancellable.
+- `cargo test --offline --manifest-path tests/DealerTransportProbe/Cargo.toml`: PASS (1). Imports production bridge with mocked host/protocol sink; verifies invalid/oversized frames, bounded backlog, reply dispatch, closure and independent connection IDs. Does not emulate WinRT, Spotify service authentication or Mobile standby.
+- Native ARM release build: PASS with existing UWP target/features and SDK binding patches. All **53** managed FFI imports exported; PE ARM32/AppContainer verified.
+- DLL SHA-256: `BECC14EC3F82D3B21ECA132216CC2824DB806146A3B130DE4BE7B58D296AC294`.
+- Physical acceptance is the matrix in STABILITY_PLAN.md. Host simulations are not evidence that ControlChannelTrigger hardware slots or locked wake work on this Lumia. Idle fresh-account discovery remains separate.
 The local/desktop boundary is documented in [LOCAL_TESTING.md](LOCAL_TESTING.md). Desktop results must not be reported as Lumia hardware acceptance.
 
 ## Automated and static checks

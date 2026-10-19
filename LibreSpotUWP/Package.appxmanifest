@@ -9,7 +9,7 @@
   <Identity
     Name="34151aa6-2b17-4a37-bddb-2ee83fdf53e4"
     Publisher="CN=MegaBytesMe"
-    Version="1.0.15.0" />
+    Version="1.0.16.0" />
 
   <mp:PhoneIdentity PhoneProductId="34151aa6-2b17-4a37-bddb-2ee83fdf53e4"
                     PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
@@ -55,6 +55,9 @@
       </uap:VisualElements>
 
       <Extensions>
+         <Extension Category="windows.backgroundTasks" Executable="$targetnametoken$.exe" EntryPoint="Windows.Networking.Sockets.WebSocketKeepAlive">
+           <BackgroundTasks><Task Type="controlChannel" /></BackgroundTasks>
+         </Extension>
          <uap:Extension Category="windows.protocol">
             <uap:Protocol Name="librespotuwp">
                <uap:DisplayName>LibreSpotUWP</uap:DisplayName>

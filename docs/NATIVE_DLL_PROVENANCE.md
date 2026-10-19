@@ -22,3 +22,13 @@ The current `windows-sys` 0.60.2 and 0.61.2 generated bindings omit four require
 The ARM linker also requires the 10.0.19041.0 `um\arm` and `ucrt\arm` directories explicitly in `LIB` and `/LIBPATH`; `deps.ps1` prepares these paths but they are not reliably preserved through every Cargo/rustc invocation. See `BUILD_GUIDE.md` for the canonical command. This avoids the misleading `LNK1181: mincore.lib` failure.
 
 This is a binding-generation correction only: it retains the ARM/UWP target and produces an AppContainer binary. Do not replace it by building a desktop ARM target or by using an x86/x64 DLL on Windows 10 Mobile.
+## 1.0.16.0 background-control candidate — 2026-10-18
+
+Supersedes the earlier binary provenance above for the current local/package DLL. The generated DLL remains ignored by Git; source provenance and the patch are tracked instead.
+
+- Native commit: `b62320452eb02621f0c2315cdabaae8ea412c5fd`, based on `9f55482`.
+- Source delta: `../native-patches/0001-uwp-background-control.patch`. The native origin belongs to a third party and was **not pushed**. The application fork carries the patch; native Cargo.lock/deps.ps1 local changes were not included in this commit.
+- SHA-256: `BECC14EC3F82D3B21ECA132216CC2824DB806146A3B130DE4BE7B58D296AC294`.
+- ARM32 UWP/AppContainer verified; all 53 managed imports exported (two additive Dealer transport exports). Existing feature set and SDK patches unchanged.
+- The bridge is opt-in: without registered callbacks the portable Dealer transport remains in use. Authentication, Spotify protocol processing and credential ownership remain native.
+- See TEST_PLAN.md for host checks and STABILITY_PLAN.md for unverified physical acceptance. This is not a claim of certified Windows Mobile background behavior.

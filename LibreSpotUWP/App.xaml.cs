@@ -590,6 +590,25 @@ namespace LibreSpotUWP
             }
         }
 
+        protected override async void OnBackgroundActivated(BackgroundActivatedEventArgs args)
+        {
+            base.OnBackgroundActivated(args);
+            if (!WinRtDealerTransport.OwnsTask(args.TaskInstance.Task.Name)) return;
+            LogService.Telemetry("dealer-background-wake", "Dealer control-channel network task activated.");
+            var deferral = args.TaskInstance.GetDeferral();
+            using (var cancellation = new CancellationTokenSource())
+            {
+                Windows.ApplicationModel.Background.BackgroundTaskCanceledEventHandler cancelled = (_, reason) =>
+                {
+                    try { cancellation.Cancel(); } catch (ObjectDisposedException) { }
+                };
+                args.TaskInstance.Canceled += cancelled;
+                try { await WinRtDealerTransport.HandleWakeAsync(cancellation.Token); }
+                catch (Exception ex) { LogService.Warn($"Dealer background activation failed: HRESULT=0x{ex.HResult:X8}."); }
+                finally { args.TaskInstance.Canceled -= cancelled; deferral.Complete(); }
+            }
+        }
+
         private void OnEnteredBackground(object sender, EnteredBackgroundEventArgs e)
         {
             LogService.Telemetry(

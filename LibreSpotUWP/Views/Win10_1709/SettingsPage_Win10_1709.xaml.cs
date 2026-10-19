@@ -367,7 +367,7 @@ namespace LibreSpotUWP.Views.Win10_1709
         private void UpdateAudioBackendCapabilities()
         {
             var backend = GetSelectedAudioBackend();
-            var supportsEffects = backend != AudioBackendKind.RustWasapi;
+            var supportsEffects = backend != AudioBackendKind.RustWasapi && backend != AudioBackendKind.PlatformMedia;
             AudioEffectsComboBox.IsEnabled = supportsEffects;
             EchoEffectToggle.IsEnabled = supportsEffects;
             ReverbEffectToggle.IsEnabled = supportsEffects;
@@ -382,7 +382,10 @@ namespace LibreSpotUWP.Views.Win10_1709
             switch (backend)
             {
                 case AudioBackendKind.RustWasapi:
-                    AudioBackendDescriptionText.Text = "Lowest-overhead Rust renderer. PCM is written directly to WASAPI; app audio effects are unavailable.";
+                case AudioBackendKind.PlatformMedia:
+                    AudioBackendDescriptionText.Text = backend == AudioBackendKind.PlatformMedia
+                        ? "Real PCM streaming through Windows MediaPlayer. Background networking requires Lumia validation. App audio effects are unavailable."
+                        : "Lowest-overhead Rust renderer. PCM is written directly to WASAPI; app audio effects are unavailable.";
                     break;
                 case AudioBackendKind.RustXAudio2:
                     AudioBackendDescriptionText.Text = "Rust-native XAudio2 renderer with live XAPO equalizer, echo, reverb, and limiter effects.";

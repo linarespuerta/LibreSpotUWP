@@ -4,6 +4,7 @@ namespace LibreSpotUWP.Models
     {
         RingBuffer = 0,
         RustWasapi = 1,
-        RustXAudio2 = 2
+        RustXAudio2 = 2,
+        PlatformMedia = 3
     }
 }

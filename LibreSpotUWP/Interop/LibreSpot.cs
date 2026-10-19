@@ -7,6 +7,24 @@ namespace LibreSpotUWP.Interop
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         [return: MarshalAs(UnmanagedType.U1)]
+        public delegate bool DealerOpenCallback(ulong id, IntPtr url);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public delegate bool DealerSendCallback(ulong id, IntPtr data, UIntPtr length);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void DealerCloseCallback(ulong id);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void DealerActivityCallback(ulong id, uint kind, [MarshalAs(UnmanagedType.U1)] bool active);
+
+        [DllImport("librespot.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void librespot_dealer_register_transport(DealerOpenCallback open, DealerSendCallback send,
+            DealerCloseCallback close, DealerActivityCallback activity);
+        [DllImport("librespot.dll", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool librespot_dealer_push_frame(ulong id, uint kind, IntPtr data, UIntPtr length);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
         public delegate bool LibrespotKeyCallback(
             IntPtr trackIdPtr,
             IntPtr fileIdPtr,

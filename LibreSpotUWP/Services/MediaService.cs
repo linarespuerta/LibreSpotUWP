@@ -244,6 +244,7 @@ namespace LibreSpotUWP.Services
             _librespot.PlaybackEvent += OnPlaybackChanged;
             _librespot.PositionChanged += OnPositionChanged;
             _librespot.SessionStateChanged += OnSessionStateChanged;
+            WinRtDealerTransport.ConnectionLost += OnControlConnectionLost;
             _librespot.VolumeChanged += OnVolumeChanged;
             _librespot.ShuffleChanged += OnShuffleChanged;
             _librespot.RepeatChanged += OnRepeatChanged;
@@ -1735,7 +1736,7 @@ namespace LibreSpotUWP.Services
                 var backend = UserSettings.AudioBackend;
                 try
                 {
-                    if (backend == AudioBackendKind.RingBuffer)
+                    if (backend == AudioBackendKind.RingBuffer || backend == AudioBackendKind.PlatformMedia)
                     {
                         // AudioGraph binds its render device during creation, so
                         // changing a Ring Buffer output requires a replacement graph.
@@ -1767,13 +1768,13 @@ namespace LibreSpotUWP.Services
                     LogService.Info(
                         $"[MediaService.SetAudioOutputDeviceAsync] backend={backend}, " +
                         $"outputDevice={(deviceId.Length == 0 ? "default" : deviceId)}, " +
-                        $"liveNativeSwitch={backend != AudioBackendKind.RingBuffer}.");
+                        $"liveNativeSwitch={backend != AudioBackendKind.RingBuffer && backend != AudioBackendKind.PlatformMedia}.");
                 }
                 catch (Exception changeError)
                 {
                     try
                     {
-                        if (backend == AudioBackendKind.RingBuffer)
+                        if (backend == AudioBackendKind.RingBuffer || backend == AudioBackendKind.PlatformMedia)
                         {
                             await RecreateAudioPlayerAsync(
                                 "output-device-rollback",
@@ -2213,14 +2214,26 @@ namespace LibreSpotUWP.Services
             string outputDeviceId)
         {
             ILibrespotAudioPlayer player;
-            if (backend == AudioBackendKind.RingBuffer)
+            if (backend == AudioBackendKind.RingBuffer || backend == AudioBackendKind.PlatformMedia)
             {
+                if (backend == AudioBackendKind.PlatformMedia) WinRtDealerTransport.Install();
+                await NativeWindowsAudioPlayer.SelectBackendAsync(backend, outputDeviceId).ConfigureAwait(false);
                 var props = (_librespot as LibrespotService)?.EncodingProperties
                             ?? AudioEncodingProperties.CreatePcm(44100, 2, 16);
-                player = new LibrespotRingBufferPlayer(props, outputDeviceId);
+                if (backend == AudioBackendKind.PlatformMedia &&
+                    (_librespot as LibrespotService)?.DecodedAudioFormat == AudioFormat.F32)
+                {
+                    props = AudioEncodingProperties.CreatePcm(props.SampleRate, props.ChannelCount, 32);
+                    props.Subtype = MediaEncodingSubtypes.Float;
+                }
+                player = new LibrespotRingBufferPlayer(props, outputDeviceId,
+                    backend == AudioBackendKind.PlatformMedia ? _mediaPlayer : null);
+                if (backend == AudioBackendKind.RingBuffer)
+                    _mediaPlayer.Source = CreateSilentMediaSource();
             }
             else
             {
+                _mediaPlayer.Source = CreateSilentMediaSource();
                 player = new NativeWindowsAudioPlayer(backend, outputDeviceId);
             }
 
@@ -2309,31 +2322,23 @@ namespace LibreSpotUWP.Services
             await _ringPlayerGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                replacementPlayer = await CreateAudioPlayerAsync(backend, outputDeviceId).ConfigureAwait(false);
                 previousPlayer = _ringPlayer;
-                _ringPlayer = replacementPlayer;
                 if (previousPlayer != null)
+                {
                     previousPlayer.ProducerStalled -= OnProducerStalled;
+                    previousPlayer.Stop();
+                    await previousPlayer.DisposeAsync().ConfigureAwait(false);
+                    _ringPlayer = null;
+                }
+                replacementPlayer = await CreateAudioPlayerAsync(backend, outputDeviceId).ConfigureAwait(false);
+                _ringPlayer = replacementPlayer;
             }
             finally
             {
                 _ringPlayerGate.Release();
             }
 
-            if (previousPlayer != null)
-            {
-                try
-                {
-                    previousPlayer.Stop();
-                    await previousPlayer.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    LogService.Warn($"[MediaService.RecreateAudioPlayerAsync] Previous audio player cleanup failed after replacement: {ex.Message}");
-                }
-            }
-
-            if (wasPlaying)
+            if (wasPlaying && Volatile.Read(ref _playbackRequested) != 0)
             {
                 replacementPlayer.BeginTransition(
                     reason,
@@ -3207,6 +3212,12 @@ namespace LibreSpotUWP.Services
             }
         }
 
+        private void OnControlConnectionLost()
+        {
+            if (Volatile.Read(ref _disposed) != 0 || !IsSelectedSpotifyConnectDeviceLocal) return;
+            UpdateState(state => state.StatusMessage = "Spotify control connection interrupted. Reconnecting; check background activity permissions if this persists.");
+        }
+
         private async void OnSessionStateChanged(object sender, LibrespotSessionState ev)
         {
             try
@@ -3719,6 +3730,11 @@ namespace LibreSpotUWP.Services
 
                 var positionMs = ClampPlaybackPosition(Current.PositionMs);
                 LogService.Warn($"[MediaService.RecoverRendererAsync] Recreating the local renderer without reconnecting Spotify. graphId={trigger.GraphInstanceId}, sessionGeneration={trigger.SessionGeneration}, positionMs={positionMs}.");
+                previousPlayer.ProducerStalled -= OnProducerStalled;
+                previousPlayer.Stop();
+                await previousPlayer.DisposeAsync().ConfigureAwait(false);
+                _ringPlayer = null;
+                if (!CanContinueRendererRecovery(trigger, cancellationToken)) return;
                 var replacement = await CreateAudioPlayerAsync(
                     UserSettings.AudioBackend,
                     UserSettings.AudioOutputDeviceId).ConfigureAwait(false);
@@ -3728,7 +3744,7 @@ namespace LibreSpotUWP.Services
                     (Current.PlaybackState != LibrespotPlaybackState.Playing &&
                      Current.PlaybackState != LibrespotPlaybackState.Loading) ||
                     !string.Equals(Current.Track?.Uri, trackUri, StringComparison.OrdinalIgnoreCase) ||
-                    !ReferenceEquals(_ringPlayer, previousPlayer))
+                    _ringPlayer != null)
                 {
                     await replacement.DisposeAsync().ConfigureAwait(false);
                     cancellationToken.ThrowIfCancellationRequested();
@@ -3736,9 +3752,6 @@ namespace LibreSpotUWP.Services
                 }
 
                 _ringPlayer = replacement;
-                previousPlayer.ProducerStalled -= OnProducerStalled;
-                previousPlayer.Stop();
-                await previousPlayer.DisposeAsync().ConfigureAwait(false);
                 _ringPlayerGate.Release();
                 playerGateAcquired = false;
 
@@ -5971,6 +5984,7 @@ namespace LibreSpotUWP.Services
             _librespot.PlaybackEvent -= OnPlaybackChanged;
             _librespot.PositionChanged -= OnPositionChanged;
             _librespot.SessionStateChanged -= OnSessionStateChanged;
+            WinRtDealerTransport.ConnectionLost -= OnControlConnectionLost;
             _librespot.VolumeChanged -= OnVolumeChanged;
             _librespot.ShuffleChanged -= OnShuffleChanged;
             _librespot.RepeatChanged -= OnRepeatChanged;
@@ -6003,10 +6017,16 @@ namespace LibreSpotUWP.Services
             if (_mediaPlayer != null)
                 _mediaPlayer.MediaFailed -= OnMediaPlayerFailed;
 
-            _ = DisposeRingPlayerAsync();
-
-            _mediaPlayer?.Dispose();
+            var platformPlayer = _mediaPlayer;
             _mediaPlayer = null;
+            _ = DisposeMediaPipelineAsync(platformPlayer);
+        }
+
+        private async Task DisposeMediaPipelineAsync(MediaPlayer platformPlayer)
+        {
+            try { await DisposeRingPlayerAsync().ConfigureAwait(false); }
+            catch (Exception ex) { LogService.Warn($"Audio pipeline cleanup failed: {ex.Message}"); }
+            finally { platformPlayer?.Dispose(); }
         }
 
         private async Task DisposeRingPlayerAsync()

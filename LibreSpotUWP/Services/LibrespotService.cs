@@ -57,6 +57,7 @@ namespace LibreSpotUWP.Services
         private string ts = DateTime.Now.ToString("HH:mm:ss");
 
         public AudioEncodingProperties EncodingProperties => _audioFormat?.EncodingProperties;
+        internal AudioFormat DecodedAudioFormat => _audioFormat?.LibrespotFormat ?? AudioFormat.S16;
         public bool HasInstance => _instance != IntPtr.Zero;
         public string DeviceName => Environment.MachineName;
         public string DeviceId => ComputeDeviceId(DeviceName);
@@ -108,6 +109,9 @@ namespace LibreSpotUWP.Services
             _dllHandle = NativeProbe.TryLoadLibreSpot();
             if (_dllHandle == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to load librespot.dll");
+
+            if (UserSettings.AudioBackend == AudioBackendKind.PlatformMedia)
+                WinRtDealerTransport.Install();
 
             await SelectStartupAudioBackendAsync().ConfigureAwait(false);
             NativeWindowsAudioPlayer.ApplyEffects();

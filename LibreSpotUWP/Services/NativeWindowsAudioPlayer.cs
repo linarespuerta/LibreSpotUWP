@@ -73,7 +73,8 @@ namespace LibreSpotUWP.Services
                 var devicePtr = AllocUtf8(resolvedDeviceId ?? string.Empty);
                 try
                 {
-                    if (!Librespot.librespot_audio_set_backend((uint)backend, devicePtr))
+                    var nativeBackend = backend == AudioBackendKind.PlatformMedia ? AudioBackendKind.RingBuffer : backend;
+                    if (!Librespot.librespot_audio_set_backend((uint)nativeBackend, devicePtr))
                     {
                         var nativeError = GetLastBackendError();
                         var detail = string.IsNullOrWhiteSpace(nativeError)
