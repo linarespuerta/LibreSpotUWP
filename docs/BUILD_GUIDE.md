@@ -51,11 +51,11 @@ The 1.0.6.0 package was installed successfully on the Lumia through Windows Devi
 
 The next discovery MVP package was version `1.0.7.0` and added a default-off local discovery setting.
 
-The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `169.254.63.27:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. Package `1.0.8.0` contains native commits `3195733` and `08f192c`.
+The first 1.0.7.0 LAN test published the Lumia as `Marantz Sala`, but advertised the unreachable link-local address `<link-local-ip>:50007`; HTTP `getInfo` timed out. Native commit `3195733` contains the lean address-selection and startup-diagnostics fix. Package `1.0.8.0` contains native commits `3195733` and `08f192c`.
 
 Package `1.0.9.0` adds the standard UWP `internetClientServer` capability alongside `privateNetworkClientServer`. This is a managed-package-only fix for LAN clients that can see mDNS but cannot open the advertised Connect TCP port; the native DLL is not rebuilt. Verify the advertised port with `avahi-browse -rt _spotify-connect._tcp`, then test it from the LAN with `nc -vz -w 3 <lumia-ip> <port>`.
 
-Validated on the Lumia (`192.168.10.28`): TCP connection succeeds and `GET /?action=getInfo` returns HTTP 200 with `status: 101`, `statusString: "OK"`, and `remoteName: "Marantz Sala"`. A second Spotify Premium account also discovers the device. If the app is suspended or closed, its dynamic mDNS/TCP endpoint disappears; keep LibreSpot running (screen on for this current UWP lifecycle) while testing Connect.
+Validated on the Lumia (`<lumia-ip>`): TCP connection succeeds and `GET /?action=getInfo` returns HTTP 200 with `status: 101`, `statusString: "OK"`, and `remoteName: "Marantz Sala"`. A second Spotify Premium account also discovers the device. If the app is suspended or closed, its dynamic mDNS/TCP endpoint disappears; keep LibreSpot running (screen on for this current UWP lifecycle) while testing Connect.
 
 Discovery MVP package (built locally, not yet physically validated):
 
@@ -94,7 +94,7 @@ The ARM32 build has two independent requirements that must be applied together:
 ```powershell
 $env:LIB = 'C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\um\arm;C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\ucrt\arm;' + $env:LIB
 $env:RUSTFLAGS = '--cfg windows_raw_dylib -C link-arg=/LIBPATH:C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\um\arm -C link-arg=/LIBPATH:C:\PROGRA~2\WI3CF2~1\10\Lib\100190~1.0\ucrt\arm'
-& "$env:USERPROFILE\.cargo\bin\rustup.exe" run nightly cargo build --config "C:/Users/pablo/OneDrive/Documentos/spotifyConnect/.cargo/uwp-windows-sys-patch.toml" -Z build-std=std,panic_abort --target thumbv7a-uwp-windows-msvc --release --no-default-features --features "native-tls uwp-backend with-libmdns"
+& "$env:USERPROFILE\.cargo\bin\rustup.exe" run nightly cargo build --config "../.cargo/uwp-windows-sys-patch.toml" -Z build-std=std,panic_abort --target thumbv7a-uwp-windows-msvc --release --no-default-features --features "native-tls uwp-backend with-libmdns"
 ```
 
 Do not omit `--config` or the ARM linker paths. The earlier failed attempt omitted the local Cargo patch, then exposed the separate `mincore.lib` search-path failure.

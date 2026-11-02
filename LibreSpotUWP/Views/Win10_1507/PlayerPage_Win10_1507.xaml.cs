@@ -262,6 +262,12 @@ namespace LibreSpotUWP.Views.Win10_1507
             mainPage?.NavigateTo("Lyrics");
         }
 
+        private void HiFiButton_Click(object sender, RoutedEventArgs e)
+        {
+            UserSettings.HiFiNowPlayingEnabled = true;
+            Frame?.Navigate(typeof(LibreSpotUWP.Views.Win10_1709.HiFiPlayerPage));
+        }
+
         private void ShowCurrentLyricToggle_Toggled(object sender, RoutedEventArgs e)
         {
             UserSettings.NowPlayingLyricsEnabled = ShowCurrentLyricToggle.IsOn;

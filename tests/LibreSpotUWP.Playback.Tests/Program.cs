@@ -31,6 +31,8 @@ internal static class Program
             NewConnectSessionRearmsRecovery,
             RendererStallDetectionSeparatesProducerFromConsumer,
             StabilityRecoveryPathsRemainAccountAndLifecycleSafe,
+            ProducerRecoveryRetriesTransientNetworkFailuresUntilReady,
+            ProducerRecoveryReleasesCallbackGateAndAcceptsDelayedPcm,
             DiagnosticExportRedactsAuthenticationMaterial,
             VolumeSliderWorkIsCoalesced,
             NavigationCancelsOldHomeGeneration,
@@ -38,6 +40,7 @@ internal static class Program
             TileRefreshBurstProducesOneUpdate,
             LiveTileUpdatesAreImmediateAndDurable,
             BackgroundingPreservesActiveLocalPlayback,
+            PlatformPlaybackRearmsAfterResumeOnlyWhenRequested,
             LockScreenCommandsHaveOnePlaybackOwner,
             PlatformPcmTimelinePreservesFramesAndBoundaries,
             PlatformPcmRejectsOverrunAndInvalidFormats,
@@ -54,9 +57,13 @@ internal static class Program
             MetadataAndLyricsCompletionCannotOutliveNavigation,
             UiPathStaticAuditFindsNoBlockingIoOrTaskWaits,
             AudioBackendsAreWiredAcrossEveryTheme,
+            HiFiPlayerIsOptInAndReusesExistingPlaybackState,
+            LockScreenArtworkIsBoundedAndKeepsTheFullCover,
             PlaybackAndHomeCriticalPathsDoNotAwaitEnrichment,
             InitialPlaybackWithDelayedProducer,
             UiTransitionKeepsBackpressuredProducerDrainable,
+            ReadyGenerationHandoffPublishesWhileConsumerIsEnabled,
+            SameTrackResumeKeepsPollingUntilPreRollIsReady,
             ManualNextWithThreeSecondProducerDelay,
             AutomaticHandoffToPreloadedTrack,
             SeekWithDelayedPcm,
@@ -75,6 +82,7 @@ internal static class Program
             ConnectTransferTimeoutReleasesSnapshot,
             CorrectionStormKeepsDispatcherAndAudioWorkBounded,
             LumiaStyleSequenceDoesNotUnderrun,
+            LockScreenAndRemoteControlPressureSequence,
             TwoConcurrentInitializationCallsShareOneOperation,
             RepeatedActivationInitializesOnce,
             StopFollowedByPlayRearmsProducerHealth,
@@ -787,7 +795,7 @@ internal static class Program
                app.Contains("LiveTiles?.RefreshAfterResuming()"),
             "live tile is not reconciled when a suspended app resumes");
         Assert(manifest.Contains("<uap:ShowNameOnTiles>") &&
-               manifest.Contains("ShortName=\"LibreSpotUWP\""),
+               manifest.Contains("ShortName=\"Streaming Hi-Fi\""),
             "the default tile has no visible identity before the first app launch");
     }
 
@@ -841,6 +849,33 @@ internal static class Program
                !prepare.Contains("_mediaPlayer?.Pause") &&
                !prepare.Contains("_librespot.PauseAsync"),
             "pressing Home can still issue an explicit playback pause");
+    }
+
+    private static void PlatformPlaybackRearmsAfterResumeOnlyWhenRequested()
+    {
+        Assert(PlatformSourcePauseRecoveryPolicy.ShouldRearmAfterResume(
+                platformBackend: true, playbackRequested: true, disposed: false),
+            "active platform playback was not re-armed after app resume");
+        Assert(!PlatformSourcePauseRecoveryPolicy.ShouldRearmAfterResume(
+                platformBackend: true, playbackRequested: false, disposed: false),
+            "an explicit playback pause could be overridden after app resume");
+        Assert(!PlatformSourcePauseRecoveryPolicy.ShouldRearmAfterResume(
+                platformBackend: true, playbackRequested: true, disposed: true),
+            "a disposed player could be re-armed");
+        Assert(!PlatformSourcePauseRecoveryPolicy.ShouldRearmAfterResume(
+                platformBackend: false, playbackRequested: true, disposed: false),
+            "the unrelated AudioGraph backend was cycled by platform-source recovery");
+
+        var repositoryRoot = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(repositoryRoot, "LibreSpotUWP", "Services", "PlatformPcmSource.cs"));
+        var media = File.ReadAllText(Path.Combine(repositoryRoot, "LibreSpotUWP", "Services", "MediaService.cs"));
+        var resumeStart = media.IndexOf("public Task ResumeAfterSuspendingAsync()", StringComparison.Ordinal);
+        var resumeEnd = media.IndexOf("private void OnMediaPlayerPlaybackStateChanged", resumeStart, StringComparison.Ordinal);
+        var resume = media.Substring(resumeStart, resumeEnd - resumeStart);
+        Assert(!source.Contains("MediaStreamSource paused while playback is still requested") &&
+               resume.Contains("PlatformSourcePauseRecoveryPolicy.ShouldRearmAfterResume(") &&
+               resume.Contains("_mediaPlayer.Pause();") && resume.Contains("_mediaPlayer.Play();"),
+            "platform source must be re-armed after app resume rather than immediately before suspension");
     }
 
     private static void LockScreenCommandsHaveOnePlaybackOwner()
@@ -897,8 +932,93 @@ internal static class Program
             "PCM sample timestamps drifted during long playback");
         Assert(timeline.BufferedEnd(5292) - timeline.Position == TimeSpan.FromMilliseconds(20),
             "buffered range does not reflect the actual available frames");
+        var beforeTrackBoundaries = timeline.Position;
+        for (int i = 0; i < 100; i++)
+            timeline.Advance(5292);
+        Assert(timeline.Position - beforeTrackBoundaries == TimeSpan.FromSeconds(2),
+            "the MediaStreamSource clock accumulated drift across simulated track boundaries");
         var padded = new PcmStreamTimeline(44100, 2, 32);
         Assert(padded.FrameBytes == 8, "32-bit container must not be confused with packed 24-bit");
+    }
+
+    private static void ProducerRecoveryRetriesTransientNetworkFailuresUntilReady()
+    {
+        Assert(BoundedRecoveryBackoff.GetDelayMilliseconds(1) == 0 &&
+               BoundedRecoveryBackoff.GetDelayMilliseconds(2) == 1000 &&
+               BoundedRecoveryBackoff.GetDelayMilliseconds(3) == 2000 &&
+               BoundedRecoveryBackoff.GetDelayMilliseconds(4) == 4000 &&
+               BoundedRecoveryBackoff.GetDelayMilliseconds(7) == 30000 &&
+               BoundedRecoveryBackoff.GetDelayMilliseconds(100) == 30000,
+            "recovery backoff is not exponential and capped at 30 seconds");
+        Assert(ProducerRecoveryRetryPolicy.ShouldRetry(new TimeoutException("session connect timeout")),
+            "a transient connect timeout was not retried");
+        Assert(ProducerRecoveryRetryPolicy.ShouldRetry(new InvalidOperationException(
+                "wrapped", new System.Net.Sockets.SocketException(11001))),
+            "a wrapped DNS/socket failure was not retried");
+        Assert(!ProducerRecoveryRetryPolicy.ShouldRetry(new InvalidOperationException("missing credentials")),
+            "a non-transient credential failure entered an endless retry loop");
+        Assert(!ProducerRecoveryRetryPolicy.ShouldRetry(new OperationCanceledException()),
+            "explicit cancellation was treated as a retryable network failure");
+
+        int attempts = 0;
+        bool recovered = false;
+        while (!recovered && attempts < 4)
+        {
+            attempts++;
+            if (attempts == 4)
+            {
+                recovered = true;
+                break;
+            }
+            Assert(ProducerRecoveryRetryPolicy.ShouldRetry(new TimeoutException("transient DNS outage")),
+                "transient failure stopped the recovery journey before the network returned");
+        }
+        Assert(recovered && attempts == 4,
+            "recovery did not continue after three transient failures until PCM could be restored");
+
+        var root = FindRepositoryRoot();
+        var media = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "MediaService.cs"));
+        var recoveryStart = media.IndexOf("private async Task RecoverProducerAsync(", StringComparison.Ordinal);
+        var recoveryEnd = media.IndexOf("private async Task<bool> WaitForSessionGenerationConnectedAsync(", recoveryStart, StringComparison.Ordinal);
+        var recovery = media.Substring(recoveryStart, recoveryEnd - recoveryStart);
+        Assert(media.Contains("for (int attempt = 1; ; attempt++)") &&
+               media.Contains("ProducerRecoveryRetryPolicy.ShouldRetry(ex)") &&
+               media.Contains("BoundedRecoveryBackoff.GetDelayMilliseconds(attempt + 1)") &&
+               !media.Contains("MaxProducerRecoveryAttempts") &&
+               recovery.Contains("cancellationToken.ThrowIfCancellationRequested()") &&
+               recovery.Contains("CanUseOwnerAuthorization(") &&
+               recovery.Contains("IsSelectedSpotifyConnectDeviceLocal"),
+            "production recovery still exhausts after a fixed attempt count instead of retrying transient failures");
+    }
+
+    private static void ProducerRecoveryReleasesCallbackGateAndAcceptsDelayedPcm()
+    {
+        Assert(ProducerRecoveryWarmupPolicy.TimeoutMilliseconds >= 16_700,
+            "recovery timeout is shorter than the delayed PCM observed on Lumia");
+        var health = new ProducerHealthMonitor();
+        health.SetPlaybackExpected(true, 3, 11, 0, 100);
+        health.SetSessionState(true, 3, 100);
+        health.ObserveProducer(4096, 16_790);
+        Assert(!ProducerRecoveryWarmupPolicy.HasProgress(health.Snapshot, 3),
+            "producer writes alone were incorrectly treated as platform reads");
+        health.ObserveStreamRead(16_805);
+        Assert(ProducerRecoveryWarmupPolicy.HasProgress(health.Snapshot, 3),
+            "late PCM and its stream read did not complete recovery warmup");
+        Assert(!ProducerRecoveryWarmupPolicy.HasProgress(health.Snapshot, 2),
+            "stale-session PCM completed the active recovery");
+
+        var root = FindRepositoryRoot();
+        var media = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "MediaService.cs"));
+        var start = media.IndexOf("private async Task RecoverProducerAsync(", StringComparison.Ordinal);
+        var end = media.IndexOf("private async Task<bool> WaitForSessionGenerationConnectedAsync(", start, StringComparison.Ordinal);
+        var recovery = media.Substring(start, end - start);
+        var load = recovery.IndexOf("await _librespot.LoadAndPlayAsync", StringComparison.Ordinal);
+        var release = recovery.IndexOf("_ringPlayerGate.Release();", load, StringComparison.Ordinal);
+        var warmup = recovery.IndexOf("WaitForProducerProgressAsync(", release, StringComparison.Ordinal);
+        Assert(load >= 0 && release > load && warmup > release,
+            "recovery still holds the renderer callback gate while waiting for producer warmup");
+        Assert(recovery.Contains("ringPlayerGateAcquired = false;"),
+            "released callback gate can be released twice by recovery cleanup");
     }
 
     private static void PlatformPcmRejectsOverrunAndInvalidFormats()
@@ -1112,20 +1232,25 @@ internal static class Program
         var ring = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "LibrespotRingBufferPlayer.cs"));
         var transport = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "WinRtDealerTransport.cs"));
         var native = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "NativeWindowsAudioPlayer.cs"));
+        var media = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "MediaService.cs"));
         Assert(source.Contains("_read(_sampleBytes)") && source.Contains("data.AsBuffer()") &&
                source.Contains("SetBufferedRange") && source.Contains("ReportSampleProgress(0)") &&
+               source.Contains("ApiInformation.IsPropertyPresent(\"Windows.Media.Core.MediaStreamSource\", \"IsLive\")") &&
+               source.Contains("Stream.IsLive = true") &&
                !source.Contains("FromHours(24)"), "platform stream still substitutes synthetic silence for decoded PCM");
         Assert(source.Contains("_lifetime.Cancel()") && source.Contains("deferral.Complete()") &&
                source.Contains("Interlocked.Increment(ref _pendingRequests) > 2"), "sample request ownership is unbounded");
         Assert(native.Contains("backend == AudioBackendKind.PlatformMedia ? AudioBackendKind.RingBuffer") &&
-               ring.Contains("new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes)") &&
+               ring.Contains("new PlatformPcmSource(") &&
+               media.Contains("PlatformSourcePauseRecoveryPolicy.ShouldRearmAfterResume(") &&
+               ring.Contains("nativeGeneration={producer.Generation}") && ring.Contains("writeSequence={producer.WriteSequence}") &&
+               ring.Contains("readSequence={read}") && ring.Contains("consumerEnabled={consumerEnabled}") &&
                ring.Contains("Marshal.Copy") && ring.Contains("_platformSource?.Dispose()"),
             "platform rendering is not mapped to the existing native ring and an owned PCM copy");
         Assert(transport.Contains("_trigger.UsingTransport(_socket)") && transport.Contains("IsNetworkRequested = true") &&
                transport.Contains("_work.Pending") && transport.Contains("_work.ReplyStored(key)") &&
                transport.Contains("_pushTask?.Unregister(true)") && transport.Contains("Push(id, 0)"),
             "control transport is not bound to actual scoped background network/reply lifetime");
-        var media = File.ReadAllText(Path.Combine(root, "LibreSpotUWP", "Services", "MediaService.cs"));
         var patch = File.ReadAllText(Path.Combine(root, "native-patches", "0002-uwp-network-work-lifetime.patch"));
         Assert(transport.Contains("if (kind == 6)") && transport.Contains("_work.BeginStartup") &&
                media.Contains("WinRtDealerTransport.PlaybackReady(startupVersion,") &&
@@ -1355,6 +1480,80 @@ internal static class Program
             "Rust backend switching does not probe or transactionally replace the active renderer");
     }
 
+    private static void HiFiPlayerIsOptInAndReusesExistingPlaybackState()
+    {
+        var appRoot = Path.Combine(FindRepositoryRoot(), "LibreSpotUWP");
+        var navigation = File.ReadAllText(Path.Combine(appRoot, "Helpers", "NavigationHelper.cs"));
+        var settings = File.ReadAllText(Path.Combine(appRoot, "Helpers", "UserSettings.cs"));
+        var view = File.ReadAllText(Path.Combine(appRoot, "Views", "Win10_1709", "HiFiPlayerPage.xaml.cs"));
+        var xaml = File.ReadAllText(Path.Combine(appRoot, "Views", "Win10_1709", "HiFiPlayerPage.xaml"));
+
+        Assert(settings.Contains("HiFiNowPlayingEnabled") &&
+               settings.Contains("defaultValue: false"),
+            "Hi-Fi now playing is not an opt-in persisted preference");
+        Assert(navigation.Contains("UserSettings.HiFiNowPlayingEnabled") &&
+               navigation.Contains("typeof(LibreSpotUWP.Views.Win10_1709.HiFiPlayerPage)"),
+            "player navigation does not honor the Hi-Fi preference");
+        Assert(view.Contains("Media.MediaStateChanged += OnMediaStateChanged") &&
+               view.Contains("Media.MediaStateChanged -= OnMediaStateChanged") &&
+               view.Contains("UiWorkScheduler.RunLatest") &&
+               view.Contains("Media?.Seek(position)") &&
+               view.Contains("Media?.SetVolumeDebounced(e.NewValue)"),
+            "Hi-Fi view does not bind to the existing coalesced playback state and commands");
+        Assert(view.Contains("state.Metadata?.Album?.Name") &&
+               view.Contains("state.Track?.Album") &&
+               view.Contains("state.IsSpotifyConnectRemote"),
+            "Hi-Fi metadata omits native/guest fallback or remote-target identity");
+        Assert(xaml.Contains("x:Name=\"PortraitLayout\"") &&
+               xaml.Contains("x:Name=\"LandscapeLayout\"") &&
+               xaml.Contains("#000000") && xaml.Contains("#F1E9D8") && xaml.Contains("#D7A65B"),
+            "Hi-Fi view is missing the planned dark palette or orientation layouts");
+        Assert(!view.Contains("Media.Initialize") && !view.Contains("Media.Reconnect") &&
+               !view.Contains("PlayAsync("),
+            "navigating to the Hi-Fi view can initialize a session or implicitly start playback");
+    }
+
+    private static void LockScreenArtworkIsBoundedAndKeepsTheFullCover()
+    {
+        var settings = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "LibreSpotUWP", "Helpers", "UserSettings.cs"));
+        Assert(settings.Contains("defaultValue: HiFiNowPlayingEnabled"),
+            "Hi-Fi users with no explicit wallpaper choice will still see the old lock screen");
+        var art = new byte[]
+        {
+            1, 2, 3, 255, 4, 5, 6, 255,
+            7, 8, 9, 255, 10, 11, 12, 255
+        };
+        var pixels = HiFiLockScreenArtworkComposer.Compose(art, 2, 2, CancellationToken.None);
+        Assert(pixels.Length == HiFiLockScreenArtworkComposer.Width *
+               HiFiLockScreenArtworkComposer.Height * 4,
+            "lock-screen wallpaper dimensions changed unexpectedly");
+        Assert(HiFiLockScreenArtworkComposer.ArtworkLeft ==
+               (HiFiLockScreenArtworkComposer.Width - HiFiLockScreenArtworkComposer.ArtworkSize) / 2 &&
+               HiFiLockScreenArtworkComposer.ArtworkTop < 360,
+            "lock-screen cover is not centered and lifted clear of the lower clock");
+        int left = HiFiLockScreenArtworkComposer.ArtworkLeft +
+                   (HiFiLockScreenArtworkComposer.ArtworkSize - 2) / 2;
+        int top = HiFiLockScreenArtworkComposer.ArtworkTop +
+                  (HiFiLockScreenArtworkComposer.ArtworkSize - 2) / 2;
+        int first = (top * HiFiLockScreenArtworkComposer.Width + left) * 4;
+        int last = ((top + 1) * HiFiLockScreenArtworkComposer.Width + left + 1) * 4;
+        Assert(pixels[first] == 1 && pixels[first + 1] == 2 && pixels[first + 2] == 3 &&
+               pixels[last] == 10 && pixels[last + 1] == 11 && pixels[last + 2] == 12,
+            "the full album cover was cropped or distorted");
+        var fallback = HiFiLockScreenArtworkComposer.Compose(null, 0, 0, CancellationToken.None);
+        Assert(fallback.Length == pixels.Length, "missing artwork retained the previous track's image");
+        int glow = (200 * HiFiLockScreenArtworkComposer.Width + 300) * 4;
+        Assert(pixels[glow] != fallback[glow] || pixels[glow + 1] != fallback[glow + 1] ||
+               pixels[glow + 2] != fallback[glow + 2],
+            "lock-screen background no longer responds to the current album color");
+        int right = (545 * HiFiLockScreenArtworkComposer.Width + 680) * 4;
+        int mirroredLeft = (545 * HiFiLockScreenArtworkComposer.Width + 40) * 4;
+        Assert(pixels[right] == pixels[mirroredLeft] &&
+               pixels[right + 1] == pixels[mirroredLeft + 1] &&
+               pixels[right + 2] == pixels[mirroredLeft + 2],
+            "decorative vinyl remains outside the centered cover");
+    }
+
     private static string FindRepositoryRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
@@ -1471,6 +1670,77 @@ internal static class Program
                 activeGeneration: machine.ActiveGeneration,
                 consumerEnabled: false),
             "a paused consumer unexpectedly preserved stale PCM");
+    }
+
+    private static void ReadyGenerationHandoffPublishesWhileConsumerIsEnabled()
+    {
+        var machine = ActiveMachine(2, 2);
+        const ulong nextStart = QuantumBytes * 80;
+        Assert(machine.ObserveLoading(3, preserveCurrent: true),
+            "external load did not preserve the active generation while draining");
+        Assert(machine.ObserveTrack(3, 3, nextStart), "replacement generation was rejected");
+        Assert(machine.RequestPlayback(3, 3), "replacement playback request was rejected");
+
+        var draining = Evaluate(
+            machine,
+            generation: 3,
+            generationStart: nextStart,
+            writeSequence: nextStart + PreRollBytes,
+            readSequence: nextStart - QuantumBytes);
+        Assert(!draining.ShouldGate && !draining.ShouldResume &&
+               draining.ActiveBoundarySequence == nextStart,
+            "old generation was not drained up to the replacement boundary");
+
+        var ready = Evaluate(
+            machine,
+            generation: 3,
+            generationStart: nextStart,
+            writeSequence: nextStart + PreRollBytes,
+            readSequence: nextStart);
+        Assert(ready.ShouldResume && ready.ActiveGeneration == 3 && !ready.ShouldGate,
+            "ready replacement generation was not published at the boundary");
+
+        // The production bug was a wrapper guard that only published this
+        // evaluation when consumerEnabled == false. Keep this focused source
+        // audit alongside the pure transition test so the live-consumer case
+        // cannot silently regress again.
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "LibreSpotUWP", "Services", "LibrespotRingBufferPlayer.cs"));
+        Assert(source.Contains("if (evaluation.ShouldResume)\r\n") ||
+               source.Contains("if (evaluation.ShouldResume)\n"),
+            "ready generation publication must not depend on the consumer already being disabled");
+        Assert(!source.Contains("if (evaluation.ShouldResume && Volatile.Read(ref _consumerEnabled) == 0)"),
+            "ready generation handoff is still gated on a disabled consumer");
+    }
+
+    private static void SameTrackResumeKeepsPollingUntilPreRollIsReady()
+    {
+        var machine = ActiveMachine(3, 30);
+        machine.Pause();
+        Assert(machine.RequestPlayback(30, 3), "same-generation Play request was rejected");
+        Assert(!machine.HasPendingTransition, "same-track resume unexpectedly created a track transition");
+
+        var early = Evaluate(machine, 3, 0, QuantumBytes * 10, 0);
+        Assert(!early.ShouldResume, "same-track resume published before pre-roll was ready");
+        Assert(AudioTransitionPollingPolicy.ShouldContinue(
+                machine.HasPendingTransition,
+                playbackReadinessPending: true),
+            "polling stopped while same-track playback was still awaiting pre-roll");
+
+        var ready = Evaluate(machine, 3, 0, PreRollBytes, 0);
+        Assert(ready.ShouldResume && ready.ActiveGeneration == 3,
+            "same-track resume did not become ready when pre-roll arrived");
+        Assert(!AudioTransitionPollingPolicy.ShouldContinue(
+                machine.HasPendingTransition,
+                playbackReadinessPending: false),
+            "polling continued after playback readiness completed");
+
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "LibreSpotUWP", "Services", "LibrespotRingBufferPlayer.cs"));
+        Assert(source.Contains("_playbackReady != null && !_playbackReady.Task.IsCompleted"),
+            "production poll loop must include the pending same-track playback waiter");
+        Assert(source.Contains("AudioTransitionPollingPolicy.ShouldContinue("),
+            "production poll loop is not wired to the regression-tested polling policy");
     }
 
     private static void AutomaticHandoffToPreloadedTrack()
@@ -1864,6 +2134,68 @@ internal static class Program
             "Lumia burst hard-corrected close to every packet");
     }
 
+    private static void LockScreenAndRemoteControlPressureSequence()
+    {
+        var machine = ActiveMachine(1, 1);
+        ulong write = PreRollBytes;
+        ulong read = 0;
+        int underruns = 0;
+        for (ulong cycle = 0; cycle < 100; cycle++)
+        {
+            // Realistic screen off/on: pause, remain paused briefly, then resume.
+            machine.Pause();
+            Assert(!machine.DesiredPlaying, "lock/pause left playback requested");
+            machine.BeginTransition(true, true);
+            ulong request = 2 + cycle * 2;
+            ulong generation = 2 + cycle * 7;
+            machine.ObserveLoading(request);
+            machine.ObserveTrack(request, generation, write);
+            Assert(machine.RequestPlayback(request, generation), "unlock/play request was rejected");
+            write += PreRollBytes;
+            read = write - PreRollBytes; // Old generation drained to the new track boundary.
+            var resumed = Evaluate(machine, generation, write - PreRollBytes, write, read);
+            if (!resumed.ShouldResume)
+                underruns++;
+            Assert(resumed.ShouldResume, "unlock did not resume after 200 ms pre-roll");
+
+            // Two rapid remote skips with stale completion from the first request.
+            ulong nextRequest = request + 1;
+            ulong previousRequest = request + 2;
+            machine.BeginTransition(false, true);
+            machine.ObserveLoading(nextRequest);
+            machine.BeginTransition(false, true);
+            machine.ObserveLoading(previousRequest);
+            Assert(!machine.ObserveTrack(nextRequest, generation + 1, write),
+                "stale Next completion won a rapid Next/Previous race");
+            Assert(machine.ObserveTrack(previousRequest, generation + 2, write),
+                "latest Previous completion did not bind");
+            machine.Pause();
+            Assert(machine.RequestPlayback(previousRequest, generation + 2),
+                "delayed remote Play did not restore desired playback");
+            write += PreRollBytes;
+            Assert(Evaluate(machine, generation + 2, write - PreRollBytes, write, read).ShouldResume,
+                "remote previous transition failed after pre-roll");
+
+            // Simulate transient DNS/network failure followed by retry in a new session.
+            Assert(ProducerRecoveryRetryPolicy.ShouldRetry(
+                    new IOException("simulated NetworkUnreachable / DNS failure")),
+                "transient network outage was not eligible for recovery retry");
+            machine.BeginTransition(false, true);
+            ulong retryRequest = previousRequest + 1;
+            machine.ObserveLoading(retryRequest);
+            Assert(machine.ObserveTrack(retryRequest, generation + 3, write),
+                "new session generation did not bind after transient network failure");
+            Assert(machine.RequestPlayback(retryRequest, generation + 3),
+                "reconnected playback request was not accepted");
+            write += PreRollBytes;
+            Assert(Evaluate(machine, generation + 3, write - PreRollBytes, write, read).ShouldResume,
+                "network recovery failed to resume the newly connected generation");
+            read = write - QuantumBytes * 4;
+        }
+
+        Assert(underruns == 0, "lock, skip and reconnect stress introduced an underrun");
+    }
+
     private static void TwoConcurrentInitializationCallsShareOneOperation()
     {
         var once = new AsyncOperationOnce();
@@ -1916,8 +2248,11 @@ internal static class Program
         var snapshot = health.Snapshot;
         Assert(snapshot.PlaybackExpected, "play did not rearm producer expectation");
         Assert(snapshot.LastPcmWriteMs == 20_100, "play did not observe replacement PCM");
-        Assert(snapshot.LastSuccessfulStreamReadMs == 20_100,
-            "successful stream-read health was not tracked separately");
+        Assert(snapshot.LastSuccessfulStreamReadMs == 0,
+            "a PCM write was incorrectly counted as a successful stream read");
+        health.ObserveStreamRead(20_125);
+        Assert(health.Snapshot.LastSuccessfulStreamReadMs == 20_125,
+            "successful stream-read health was not recorded independently");
     }
 
     private static void EndOfQueueDisarmsProducerHealth()

@@ -1,6 +1,6 @@
 # Goal 2: dedicated Hi-Fi Now Playing
 
-Date: 2026-10-18. Status: planned; next delivery begins with R0 remote-control continuity, then the Hi-Fi view. No runtime code changed in this planning delivery.
+Date: 2026-10-19. Status: U1 installed as 1.0.29.0 and the user likes its appearance; lock-screen artwork is the next opt-in slice. R0 stability remains open.
 
 ## Outcome and boundaries
 
@@ -37,7 +37,7 @@ Source inspection is not visual acceptance. Confirm the installed appearance rou
 
 ## Visual direction
 
-Use a solid `#000000` background, warm ivory primary text (`#F1E9D8`), muted gray secondary labels and a restrained amber accent (`#D7A65B`). Treat colors as initial tokens, then check contrast and physical readability. Use Segoe UI already available on the phone; no font download. Large artwork is the visual focus. Avoid simulated brushed metal, glowing panels, blur, spinning discs, continuous equalizers or decorative VU meters requiring animation/data we do not have.
+Use a solid `#000000` background, warm ivory primary text (`#F1E9D8`), muted gray secondary labels and a restrained amber accent (`#D7A65B`). Treat colors as initial tokens, then check contrast and physical readability. Use Segoe UI already available on the phone; no font download. Large artwork is the visual focus. Avoid simulated brushed metal, glowing panels, blur, continuous equalizers or decorative VU meters requiring data we do not have. Following user feedback on U1, a small vinyl accent may rotate only while the visible Hi-Fi view is playing; it must stop when paused or unloaded.
 
 Portrait: small receiver/status header, centered square artwork, title (up to two lines), artist and album, thin progress with elapsed/remaining time, then Previous / Play-Pause / Next and accessible volume. Landscape: cover on the left, metadata/progress/controls on the right. Use effective view dimensions and scale factor, not hardcoded panel resolution. Test narrow heights, larger text settings and rotation; controls must not be pushed off-screen.
 
@@ -105,3 +105,29 @@ Primary Microsoft documentation reviewed on 2026-10-18. Verify runtime availabil
 ## Stability dependency — 2026-10-18
 
 The 1.0.16.0 opt-in Windows streaming backend and WinRT Dealer control bridge must pass the physical lock/control/natural-track-boundary matrix in STABILITY_PLAN.md before visual work can treat stability as closed. Existing rendering remains a rollback. Do not promise app-side effects on PlatformMedia or confuse authenticated control with idle locked Zeroconf discovery.
+
+## U1 implementation update — 2026-10-19
+
+Added the first opt-in player surface as `Views/Win10_1709/HiFiPlayerPage.xaml` and its code-behind. The preference defaults off and is saved in LocalSettings. The classic player's More menu in each appearance now offers “Hi-Fi now playing”; the focused view offers a direct return to the classic player. This leaves the established player as rollback and does not alter package identity, login, playback backend, native DLL or session setup.
+
+The screen uses solid black, ivory and restrained amber, with separate responsive portrait/landscape layouts, square artwork, active track/artist/album fields, progress, transport and coalesced volume. It subscribes to the existing `MediaService` state and commands only while loaded; it does not create a playback session or start/reconnect playback during navigation. Album metadata falls back to the native track fields, so guest playback does not depend on the logged-in owner's library. Remote target playback is named explicitly. No “bit-perfect” or lossless claim is shown.
+
+The portable test suite now checks opt-in routing, lifecycle subscription, use of existing commands, guest/native metadata fallback, remote-target labeling, palette/orientation markup and absence of implicit session/play startup. A successful ARM/XAML build and Lumia visual/interaction review are still required. Artwork decode sizing, generation-safe async loading, explicit placeholder/error states beyond the basic fallback, and U2 transitions/cache remain future work. Stability R0 remains an acceptance dependency: this UI candidate is not a stability fix and must not replace the existing player as default.
+
+## Lock-screen artwork follow-up (2026-10-19)
+
+After trying 1.0.29.0 on the Lumia, the user liked the Hi-Fi screen and requested a large cover plus a rotating vinyl on the lock screen. Windows owns the actual lock-screen layout and SMTC controls. The app already supplies title, artist, album and cover through `SystemMediaTransportControls.DisplayUpdater`; that API does not host XAML or animated artwork. The supported personalization API can set a **still** wallpaper if `IsSupported()` returns true. On Mobile, the image must be below 2 MiB and each replacement needs a new file name. These are platform limits, not a visual-design choice.
+
+The new optional `Lock-screen cover` switch creates a 720x1280 JPEG with the full square artwork over a dark vinyl sleeve and gives it to `UserProfilePersonalizationSettings`. It defaults off, downloads at most 3 MiB of public cover art, publishes once per track/art key, cancels superseded work and serializes updates. The active wallpaper file remains in app storage; older generated files are removed after a successful replacement. If art is missing, it publishes a neutral sleeve instead of showing the previous track's cover. Disabling the switch stops future changes, but Windows does not provide a safe Mobile API in this app to restore the user's prior wallpaper automatically; the switch explains this before opt-in. The small vinyl accent in the visible Hi-Fi page rotates only while playing and stops on pause/navigation. It cannot rotate on the real lock screen or while the screen is off.
+
+Lumia validation must check Mobile API support, first wallpaper application, album change while locked, missing art, user wallpaper impact, the OS clock/SMTC placement over the image, and whether background work is actually scheduled. Do not claim an animated system lock screen or wallpaper update while the process is suspended. Keep the existing audio/backend and Connect control matrix as separate acceptance gates.
+
+## 1.0.31 lock-screen visibility correction (2026-10-19)
+
+The 1.0.30 candidate left the wallpaper preference off by default and buried it in the Hi-Fi More menu. The user's Lumia therefore showed only the unchanged Windows transport controls. For users who already opted into the Hi-Fi player and have not explicitly chosen a lock-screen preference, the wallpaper now defaults on; an explicit off choice remains respected. Entering Hi-Fi schedules the current cover immediately. The wallpaper uses a restrained color glow sampled from the active album and retains the full square artwork and vinyl composition. The menu now states plainly that the wallpaper changes behind the OS controls and that only the in-app record can spin. This is a visibility/visual correction, not a claim that the OS controller is customizable.
+
+Physical acceptance for 1.0.31 must first confirm that the lock-screen **background** actually changes on the Lumia and stays legible under the clock/transport overlay. If the wallpaper does not change, collect the redacted `hifi-lock-screen-artwork-error` or `hifi-lock-screen-schedule-error` telemetry and confirm `UserProfilePersonalizationSettings.IsSupported()` on-device before further design work. Do not infer success from the ARM build alone.
+
+## 1.0.32 lock-screen layout refinement (2026-10-19)
+
+Based on the Lumia preview, remove the decorative vinyl from the **lock-screen wallpaper**. Center the full album cover horizontally and shift it 80 px upward in the 720x1280 composition so it clears the lower clock area. Keep the restrained album-color backdrop and thin cover frame. The spinning accent on the visible in-app Hi-Fi player is unchanged; Windows still owns the actual lock-screen controls. Validate the final placement on the physical Lumia at its real display scaling and with short/long track metadata.

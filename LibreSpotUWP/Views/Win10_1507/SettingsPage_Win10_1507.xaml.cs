@@ -648,7 +648,7 @@ namespace LibreSpotUWP.Views.Win10_1507
                 {
                     Inlines =
                     {
-                        new Run { Text = "LibreSpotUWP", FontWeight = FontWeights.Bold, FontSize = 18 },
+                        new Run { Text = "Streaming Hi-Fi", FontWeight = FontWeights.Bold, FontSize = 18 },
                         new LineBreak(),
                         new Run { Text = $"Version {OSHelper.AppVersion} ({OSHelper.PlatformFamily}) {OSHelper.Architecture}" },
                         new LineBreak(),

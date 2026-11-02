@@ -1,6 +1,10 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.ComponentModel;
 
 namespace LibreSpotUWP.Services
 {
@@ -299,14 +303,15 @@ namespace LibreSpotUWP.Services
 
                 _state.LastWriteSequence = writeSequence;
                 _state.LastPcmWriteMs = nowMs;
-                // Decoded PCM can only advance after a successful source-stream
-                // read. Keep this independently named timestamp so a future native
-                // stream-read counter can replace the inference without changing
-                // the watchdog contract.
-                _state.LastSuccessfulStreamReadMs = nowMs;
                 if (!_state.FatalTransportFailure && _state.SessionConnected)
                     _stallSignalled = false;
             }
+        }
+
+        public void ObserveStreamRead(long nowMs)
+        {
+            lock (_sync)
+                _state.LastSuccessfulStreamReadMs = nowMs;
         }
 
         public bool IsDecisionCurrent(ProducerHealthSnapshot decisionSnapshot)
@@ -371,6 +376,18 @@ namespace LibreSpotUWP.Services
                 decision.Snapshot = _state;
                 return decision;
             }
+        }
+    }
+
+    internal static class ProducerRecoveryWarmupPolicy
+    {
+        public const int TimeoutMilliseconds = 25_000;
+
+        public static bool HasProgress(ProducerHealthSnapshot health, long sessionGeneration)
+        {
+            return health.SessionGeneration == sessionGeneration &&
+                health.LastPcmWriteMs > 0 &&
+                health.LastSuccessfulStreamReadMs > 0;
         }
     }
 
@@ -482,13 +499,38 @@ namespace LibreSpotUWP.Services
 
     internal static class BoundedRecoveryBackoff
     {
+        private const int MaximumDelayMilliseconds = 30000;
+
         public static int GetDelayMilliseconds(int attempt)
         {
             if (attempt <= 1)
                 return 0;
 
-            int exponent = Math.Min(2, attempt - 2);
-            return 1000 << exponent;
+            int exponent = Math.Min(5, attempt - 2);
+            return Math.Min(MaximumDelayMilliseconds, 1000 << exponent);
+        }
+    }
+
+    internal static class ProducerRecoveryRetryPolicy
+    {
+        public static bool ShouldRetry(Exception exception)
+        {
+            if (exception == null || exception is OperationCanceledException)
+                return false;
+
+            for (var current = exception; current != null; current = current.InnerException)
+            {
+                if (current is TimeoutException ||
+                    current is HttpRequestException ||
+                    current is IOException ||
+                    current is SocketException ||
+                    current is Win32Exception)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -2,6 +2,14 @@ using System;
 
 namespace LibreSpotUWP.Services
 {
+    internal static class AudioTransitionPollingPolicy
+    {
+        public static bool ShouldContinue(bool hasPendingTransition, bool playbackReadinessPending)
+        {
+            return hasPendingTransition || playbackReadinessPending;
+        }
+    }
+
     internal struct AudioProducerState
     {
         public ulong Generation;

@@ -9,13 +9,13 @@
   <Identity
     Name="34151aa6-2b17-4a37-bddb-2ee83fdf53e4"
     Publisher="CN=MegaBytesMe"
-    Version="1.0.22.0" />
+    Version="1.0.34.0" />
 
   <mp:PhoneIdentity PhoneProductId="34151aa6-2b17-4a37-bddb-2ee83fdf53e4"
                     PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>LibreSpotUWP</DisplayName>
+    <DisplayName>Streaming Hi-Fi</DisplayName>
     <PublisherDisplayName>MegaBytesMe</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -36,15 +36,15 @@
                  EntryPoint="LibreSpotUWP.App">
 
       <uap:VisualElements
-        DisplayName="LibreSpotUWP"
+        DisplayName="Streaming Hi-Fi"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
-        Description="LibreSpotUWP is a Spotify client designed with UWP in mind, powered by LibreSpot."
+        Description="Streaming Hi-Fi is a personal Spotify Connect player for a home Hi-Fi system, powered by LibreSpot."
         BackgroundColor="transparent">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"
                          Square71x71Logo="Assets\SmallTile.png"
                          Square310x310Logo="Assets\LargeTile.png"
-                         ShortName="LibreSpotUWP">
+                         ShortName="Streaming Hi-Fi">
           <uap:ShowNameOnTiles>
             <uap:ShowOn Tile="square150x150Logo"/>
             <uap:ShowOn Tile="wide310x150Logo"/>
@@ -60,7 +60,7 @@
          </Extension>
          <uap:Extension Category="windows.protocol">
             <uap:Protocol Name="librespotuwp">
-               <uap:DisplayName>LibreSpotUWP</uap:DisplayName>
+               <uap:DisplayName>Streaming Hi-Fi</uap:DisplayName>
             </uap:Protocol>
          </uap:Extension>
       </Extensions>

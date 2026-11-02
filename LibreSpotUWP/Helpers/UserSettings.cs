@@ -32,6 +32,8 @@ namespace LibreSpotUWP.Helpers
         private const string PlayDownloadedSongsDuringConnectionLossKey = "PlayDownloadedSongsDuringConnectionLoss";
         private const string PlayRandomOfflineSongWhenUnavailableKey = "PlayRandomOfflineSongWhenUnavailable";
         private const string RememberLastPageKey = "RememberLastPage";
+        private const string HiFiNowPlayingEnabledKey = "HiFiNowPlayingEnabled";
+        private const string HiFiLockScreenArtworkEnabledKey = "HiFiLockScreenArtworkEnabled";
         private const string LyricsUseSpotifyThemeKey = "LyricsUseSpotifyTheme";
         private const string LiveTilesEnabledKey = "LiveTilesEnabled";
         private const string LiveTileOpenRandomItemsKey = "LiveTileOpenRandomItems";
@@ -207,6 +209,22 @@ namespace LibreSpotUWP.Helpers
         {
             get => ApplicationData.Current.LocalSettings.Values.TryGetValue(RememberLastPageKey, out object value) && value is bool enabled && enabled;
             set => ApplicationData.Current.LocalSettings.Values[RememberLastPageKey] = value;
+        }
+
+        /// <summary>Opt-in to the focused appliance-style now-playing screen.</summary>
+        public static bool HiFiNowPlayingEnabled
+        {
+            get => GetBoolSetting(HiFiNowPlayingEnabledKey, defaultValue: false);
+            set => ApplicationData.Current.LocalSettings.Values[HiFiNowPlayingEnabledKey] = value;
+        }
+
+        /// <summary>Opt-in to changing the phone's lock-screen wallpaper with album artwork.</summary>
+        public static bool HiFiLockScreenArtworkEnabled
+        {
+            // Hi-Fi mode is an explicit visual choice. Preserve an explicit off switch,
+            // but show its lock-screen artwork by default for that mode.
+            get => GetBoolSetting(HiFiLockScreenArtworkEnabledKey, defaultValue: HiFiNowPlayingEnabled);
+            set => ApplicationData.Current.LocalSettings.Values[HiFiLockScreenArtworkEnabledKey] = value;
         }
 
         public static bool ResumeLastPlaybackIfWasPlaying

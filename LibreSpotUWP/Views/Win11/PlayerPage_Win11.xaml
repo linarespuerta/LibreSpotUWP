@@ -110,6 +110,9 @@
                                 <TextBlock Text="Lyrics" />
                             </StackPanel>
                         </Button>
+                        <Button Margin="0,8,0,0" Padding="10,6" Click="HiFiButton_Click">
+                            <TextBlock Text="Hi-Fi now playing" />
+                        </Button>
                         <ToggleSwitch
                             x:Name="ShowCurrentLyricToggle"
                             Margin="0,12,0,0"

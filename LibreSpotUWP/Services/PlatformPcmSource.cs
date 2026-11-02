@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.Foundation.Metadata;
 using Windows.Media.Core;
 using Windows.Media.MediaProperties;
 
@@ -13,6 +14,7 @@ namespace LibreSpotUWP.Services
     {
         private readonly Func<int, byte[]> _read;
         private readonly Func<int> _available;
+        private readonly Func<string> _ringState;
         private readonly PcmStreamTimeline _timeline;
         private readonly CancellationTokenSource _lifetime = new CancellationTokenSource();
         private readonly SemaphoreSlim _samples = new SemaphoreSlim(1, 1);
@@ -28,10 +30,11 @@ namespace LibreSpotUWP.Services
         public MediaStreamSource Stream { get; }
         public MediaSource Source { get; }
 
-        public PlatformPcmSource(AudioEncodingProperties properties, Func<int, byte[]> read, Func<int> available)
+        public PlatformPcmSource(AudioEncodingProperties properties, Func<int, byte[]> read, Func<int> available, Func<string> ringState)
         {
             _read = read;
             _available = available;
+            _ringState = ringState;
             _cancelled = Task.Delay(Timeout.Infinite, _lifetime.Token);
             _timeline = new PcmStreamTimeline((int)properties.SampleRate, (int)properties.ChannelCount, (int)properties.BitsPerSample);
             _sampleBytes = Math.Max(1, (int)properties.SampleRate / 50) * _timeline.FrameBytes;
@@ -43,6 +46,19 @@ namespace LibreSpotUWP.Services
             Stream.CanSeek = false;
             LogService.BackendStage("pcm.stream.duration");
             Stream.Duration = TimeSpan.Zero;
+            // This source is an unbounded, real-time Spotify session spanning
+            // multiple tracks. Duration=0 alone only means "unspecified";
+            // explicitly identify it as live when the OS contract supports it.
+            LogService.BackendStage("pcm.stream.live-capability");
+            if (ApiInformation.IsPropertyPresent("Windows.Media.Core.MediaStreamSource", "IsLive"))
+            {
+                LogService.BackendStage("pcm.stream.live-enable");
+                Stream.IsLive = true;
+            }
+            else
+            {
+                LogService.Info("Platform PCM source is live; this Windows version has no MediaStreamSource.IsLive property.");
+            }
             LogService.BackendStage("pcm.stream.buffer-time");
             Stream.BufferTime = TimeSpan.FromMilliseconds(40);
             LogService.BackendStage("pcm.stream.events");
@@ -64,7 +80,7 @@ namespace LibreSpotUWP.Services
             if (Volatile.Read(ref _disposed) != 0) return;
             try
             {
-                LogService.Info($"Platform PCM diagnostic; reason={reason}, {_diagnostics.Snapshot()}, pending={Volatile.Read(ref _pendingRequests)}, availableBytes={_available()}, positionMs={_timeline.Position.TotalMilliseconds:F0}.");
+                LogService.Info($"Platform PCM diagnostic; reason={reason}, {_diagnostics.Snapshot()}, pending={Volatile.Read(ref _pendingRequests)}, availableBytes={_available()}, positionMs={_timeline.Position.TotalMilliseconds:F0}, ring={_ringState()}.");
             }
             catch (Exception ex) { LogService.Warn($"Platform PCM diagnostic failed: HRESULT=0x{ex.HResult:X8}."); }
         }

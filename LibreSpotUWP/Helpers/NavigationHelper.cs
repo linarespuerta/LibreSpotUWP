@@ -34,6 +34,7 @@ namespace LibreSpotUWP.Helpers
 
             if (pageKey == "Player")
             {
+                if (UserSettings.HiFiNowPlayingEnabled) return typeof(LibreSpotUWP.Views.Win10_1709.HiFiPlayerPage);
                 if (mode == AppearanceMode.Win11) return typeof(LibreSpotUWP.Views.Win11.PlayerPage_Win11);
                 if (mode == AppearanceMode.Win10_1709) return typeof(LibreSpotUWP.Views.Win10_1709.PlayerPage_Win10_1709);
                 return typeof(PlayerPage_Win10_1507);

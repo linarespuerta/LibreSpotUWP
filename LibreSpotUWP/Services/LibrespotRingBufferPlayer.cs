@@ -220,7 +220,7 @@ namespace LibreSpotUWP.Services
                     if (OSHelper.IsWindowsMobile)
                         LogService.BackendStage("platform.output-device.system-default");
                     LogService.BackendStage("platform.pcm-source.begin");
-                    _platformSource = new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes);
+                    _platformSource = new PlatformPcmSource(_props, ReadPlatformPcm, GetPlatformAvailableBytes, GetPlatformRingDiagnosticSnapshot);
                     LogService.BackendStage("platform.player-source.assign");
                     _platformPlayer.Source = _platformSource.Source;
                     LogService.BackendStage("platform.player-source.assigned");
@@ -415,6 +415,7 @@ namespace LibreSpotUWP.Services
 
                     if (boundarySequence >= 0 && nextReadSequence >= boundarySequence)
                         Interlocked.Exchange(ref _consumerEnabled, 0);
+                    _producerHealth.ObserveStreamRead(GetMonotonicMilliseconds());
                 }
             }
             finally
@@ -755,7 +756,13 @@ namespace LibreSpotUWP.Services
                         ? -1
                         : (long)evaluation.ActiveBoundarySequence);
 
-                if (evaluation.ShouldResume && Volatile.Read(ref _consumerEnabled) == 0)
+                // A preserve-current handoff can reach its boundary while the
+                // MediaStreamSource consumer is still enabled. Publish the new
+                // generation in that case too; otherwise the source remains
+                // pinned to the previous generation and waits forever at the
+                // boundary. SetInputNodeRunningAsync is idempotent when already
+                // running and also re-arms the platform source for the new data.
+                if (evaluation.ShouldResume)
                 {
                     if (evaluation.ActiveStartSequence != 0 || readSequence == 0)
                     {
@@ -798,7 +805,12 @@ namespace LibreSpotUWP.Services
                 Interlocked.Exchange(ref _transitionPollRunning, 0);
                 bool shouldPollAgain;
                 lock (_transitionLock)
-                    shouldPollAgain = _transitionState != null && _transitionState.HasPendingTransition;
+                {
+                    var playbackReadinessPending = _playbackReady != null && !_playbackReady.Task.IsCompleted;
+                    shouldPollAgain = _transitionState != null && AudioTransitionPollingPolicy.ShouldContinue(
+                        _transitionState.HasPendingTransition,
+                        playbackReadinessPending);
+                }
 
                 if (shouldPollAgain && Volatile.Read(ref _disposed) == 0)
                     _transitionTimer?.Change(TransitionPollIntervalMs, Timeout.Infinite);
@@ -1043,6 +1055,32 @@ namespace LibreSpotUWP.Services
             };
         }
 
+        // Sampled only by the source's five-second diagnostic timer, never by
+        // the PCM callback. These values distinguish native starvation from a
+        // managed consumer gate without logging track/account metadata.
+        private string GetPlatformRingDiagnosticSnapshot()
+        {
+            if (!_callbackLifetime.TryEnter()) return "callbackLifetime=closed";
+            try
+            {
+                lock (_transitionLock)
+                {
+                    var producer = GetProducerState();
+                    var read = (ulong)Math.Max(0, Volatile.Read(ref _readSequence));
+                    var consumerEnabled = Volatile.Read(ref _consumerEnabled) != 0;
+                    var buffered = producer.WriteSequence > read
+                        ? Math.Min((ulong)Math.Max(0, _capacityBytes), producer.WriteSequence - read)
+                        : 0;
+                    return $"nativeGeneration={producer.Generation}, generationStart={producer.GenerationStartSequence}, writeSequence={producer.WriteSequence}, readSequence={read}, consumerEnabled={consumerEnabled}, activeGeneration={Volatile.Read(ref _activeGeneration)}, boundarySequence={Volatile.Read(ref _activeBoundarySequence)}, bufferedBytes={buffered}, disposed={Volatile.Read(ref _disposed)}";
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"snapshotError=0x{ex.HResult:X8}";
+            }
+            finally { _callbackLifetime.Exit(); }
+        }
+
         private byte[] ReadPlatformPcm(int maximumBytes)
         {
             if (!_callbackLifetime.TryEnter()) return null;
@@ -1069,6 +1107,7 @@ namespace LibreSpotUWP.Services
                     var next = read + (ulong)bytes;
                     Interlocked.Exchange(ref _readSequence, (long)next);
                     librespot_audio_set_read_sequence(next);
+                    _producerHealth.ObserveStreamRead(GetMonotonicMilliseconds());
                     return data;
                 }
             }
