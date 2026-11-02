@@ -42,6 +42,7 @@ namespace LibreSpotUWP
         public static DownloadTrackerService Downloads { get; private set; }
         public static IBackgroundExecutionManager BackgroundExecution { get; private set; }
         public static LiveTileService LiveTiles { get; private set; }
+        internal static HomeAssistantLinkService HomeAssistantLink { get; private set; }
         private ISecureStorage _secureStorage;
         private IFileSystem _fileSystem;
         private IMetadataCache _metadataCache;
@@ -357,6 +358,7 @@ namespace LibreSpotUWP
             await Media.InitializeAsync();
             LiveTiles = new LiveTileService(Media, SpotifyAuth, SpotifyWeb);
             await LiveTiles.InitializeAsync(isSignedIn);
+            await StartHomeAssistantLinkAsync();
 
             // Request this while the app is still foregrounded. The native
             // listener may be idle, but must remain discoverable after the
@@ -365,6 +367,21 @@ namespace LibreSpotUWP
 
             _servicesInitialized = true;
             return isSignedIn;
+        }
+
+        // The Home Assistant link is optional; nothing about it may stop the app from starting.
+        private async Task StartHomeAssistantLinkAsync()
+        {
+            try
+            {
+                HomeAssistantLinkService.CleanupStaleTasks();
+                HomeAssistantLink = new HomeAssistantLinkService(Media, _secureStorage);
+                await HomeAssistantLink.ApplySettingsAsync();
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn($"[App.StartHomeAssistantLinkAsync] Home Assistant link unavailable: HRESULT=0x{ex.HResult:X8}.");
+            }
         }
 
         /// <summary>
@@ -593,6 +610,11 @@ namespace LibreSpotUWP
         protected override async void OnBackgroundActivated(BackgroundActivatedEventArgs args)
         {
             base.OnBackgroundActivated(args);
+            if (HomeAssistantLinkService.OwnsTask(args.TaskInstance.Task.Name))
+            {
+                await HandleHomeAssistantWakeAsync(args);
+                return;
+            }
             if (!WinRtDealerTransport.OwnsTask(args.TaskInstance.Task.Name)) return;
             LogService.Telemetry("dealer-background-wake", "Dealer control-channel network task activated.");
             var deferral = args.TaskInstance.GetDeferral();
@@ -605,6 +627,23 @@ namespace LibreSpotUWP
                 args.TaskInstance.Canceled += cancelled;
                 try { await WinRtDealerTransport.HandleWakeAsync(cancellation.Token); }
                 catch (Exception ex) { LogService.Warn($"Dealer background activation failed: HRESULT=0x{ex.HResult:X8}."); }
+                finally { args.TaskInstance.Canceled -= cancelled; deferral.Complete(); }
+            }
+        }
+
+        private static async Task HandleHomeAssistantWakeAsync(BackgroundActivatedEventArgs args)
+        {
+            LogService.Telemetry("ha-link-background-wake", "Home Assistant control-channel task activated.");
+            var deferral = args.TaskInstance.GetDeferral();
+            using (var cancellation = new CancellationTokenSource())
+            {
+                Windows.ApplicationModel.Background.BackgroundTaskCanceledEventHandler cancelled = (_, reason) =>
+                {
+                    try { cancellation.Cancel(); } catch (ObjectDisposedException) { }
+                };
+                args.TaskInstance.Canceled += cancelled;
+                try { await HomeAssistantLinkService.HandleWakeAsync(cancellation.Token); }
+                catch (Exception ex) { LogService.Warn($"Home Assistant background activation failed: HRESULT=0x{ex.HResult:X8}."); }
                 finally { args.TaskInstance.Canceled -= cancelled; deferral.Complete(); }
             }
         }
@@ -633,6 +672,7 @@ namespace LibreSpotUWP
                 if (Media != null)
                     await Media.ResumeAfterSuspendingAsync();
                 LiveTiles?.RefreshAfterResuming();
+                HomeAssistantLink?.RetrySoon();
             }
             catch (Exception ex)
             {

@@ -165,6 +165,7 @@
     <Compile Include="Helpers\NowPlayingLyricsPresenter.cs" />
     <Compile Include="Helpers\PlaybackNavigationHelper.cs" />
     <Compile Include="Helpers\StorageStatisticsHelper.cs" />
+    <Compile Include="Helpers\HomeAssistantSettingsController.cs" />
     <Compile Include="Helpers\UserSettings.cs" />
     <Compile Include="Helpers\UwpBackgroundExecutionManager.cs" />
     <Compile Include="Helpers\UwpSettingsNavigator.cs" />
@@ -260,7 +261,11 @@
     <Compile Include="Services\WinRtDealerTransport.cs" />
     <Compile Include="Services\ControlWorkTracker.cs" />
     <Compile Include="Services\DealerChannelPolicy.cs" />
+    <Compile Include="Services\HomeAssistantLinkService.cs" />
     <Compile Include="Services\HomeAssistant\HaCommandParser.cs" />
+    <Compile Include="Services\HomeAssistant\HaCommandDispatcher.cs" />
+    <Compile Include="Services\HomeAssistant\HaLinkPolicy.cs" />
+    <Compile Include="Services\HomeAssistant\HaLinkSession.cs" />
     <Compile Include="Services\HomeAssistant\HaContract.cs" />
     <Compile Include="Services\HomeAssistant\HaFrames.cs" />
     <Compile Include="Services\HomeAssistant\HaStateInputFactory.cs" />

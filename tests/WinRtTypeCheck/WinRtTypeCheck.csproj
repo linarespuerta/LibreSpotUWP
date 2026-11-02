@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <OutputType>Library</OutputType>
+    <!-- Type-checks WinRT-facing sources against Windows SDK 10.0.19041 metadata on any OS.
+         Not a substitute for the UWP ARM build: no XAML compilation, no .NET Native. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS1998</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.19041.1" />
+    <PackageReference Include="SpotifyAPI.Web" Version="7.2.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../LibreSpotUWP/Services/HomeAssistantLinkService.cs" />
+    <Compile Include="../../LibreSpotUWP/Services/HomeAssistant/*.cs" />
+    <Compile Include="../../LibreSpotUWP/Helpers/HomeAssistantSettingsController.cs" />
+    <Compile Include="../../LibreSpotUWP/Helpers/UserSettings.cs" />
+    <Compile Include="../../LibreSpotUWP/Models/*.cs" />
+    <Compile Include="../../LibreSpotUWP/Interfaces/IMediaService.cs" />
+    <Compile Include="../../LibreSpotUWP/Interfaces/ISecureStorage.cs" />
+    <Compile Include="../../LibreSpotUWP/Services/DealerChannelPolicy.cs" />
+    <Compile Include="Stubs.cs" />
+  </ItemGroup>
+</Project>

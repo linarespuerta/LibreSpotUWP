@@ -26,6 +26,9 @@
     <Compile Include="..\..\LibreSpotUWP\Services\ApplicationPlaybackQueue.cs" Link="ApplicationPlaybackQueue.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\ResponsivenessPrimitives.cs" Link="ResponsivenessPrimitives.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaCommandParser.cs" Link="HomeAssistant\HaCommandParser.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaCommandDispatcher.cs" Link="HomeAssistant\HaCommandDispatcher.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaLinkPolicy.cs" Link="HomeAssistant\HaLinkPolicy.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaLinkSession.cs" Link="HomeAssistant\HaLinkSession.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaContract.cs" Link="HomeAssistant\HaContract.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaFrames.cs" Link="HomeAssistant\HaFrames.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaStateInputFactory.cs" Link="HomeAssistant\HaStateInputFactory.cs" />

@@ -177,6 +177,42 @@
                     </StackPanel>
                 </muxc:Expander>
 
+                <muxc:Expander HorizontalAlignment="Stretch" IsExpanded="False">
+                    <muxc:Expander.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE80F;" />
+                            <TextBlock VerticalAlignment="Center" Text="Home Assistant" />
+                        </StackPanel>
+                    </muxc:Expander.Header>
+                    <StackPanel Spacing="12">
+                        <ToggleSwitch
+                            x:Name="HomeAssistantLinkToggle"
+                            Header="Connect to Home Assistant" />
+                        <TextBlock
+                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="Lets Home Assistant show and control playback on this device. Off by default. Add the Lumia HiFi integration in Home Assistant first: it shows the address and the secret to enter here."
+                            TextWrapping="WrapWholeWords" />
+                        <TextBox
+                            x:Name="HomeAssistantUrlTextBox"
+                            Header="Address"
+                            InputScope="Url"
+                            IsSpellCheckEnabled="False"
+                            PlaceholderText="ws://homeassistant.local:8123/api/lumia_hifi/v1/link" />
+                        <PasswordBox
+                            x:Name="HomeAssistantSecretBox"
+                            Header="Secret" />
+                        <Button
+                            x:Name="HomeAssistantSaveButton"
+                            Content="Save and connect" />
+                        <TextBlock
+                            x:Name="HomeAssistantStatusText"
+                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="WrapWholeWords" />
+                    </StackPanel>
+                </muxc:Expander>
+
                 <muxc:Expander HorizontalAlignment="Stretch" IsExpanded="True">
                     <muxc:Expander.Header>
                         <StackPanel Orientation="Horizontal" Spacing="12">

@@ -1,6 +1,6 @@
 # Home Assistant code round (M3)
 
-Status: **WP1–WP4 implemented on branch `feature/ha-link` (2026-11-02); WP0 and WP5–WP7 pending (they need the Windows host and the Lumia).** The plan below is unchanged except for the deviations listed in section 10. This document refines [HOME_ASSISTANT_DESIGN.md](HOME_ASSISTANT_DESIGN.md) and roadmap milestone M3. All Lumia/LAN behaviour below is **unverified** until measured on the device.
+Status: **WP1–WP6 written on branch `feature/ha-link` (2026-11-02), package version 1.0.35.0. WP0 is folded into WP5 as on-device evidence (the link records which standby slot it gets). Pending: the Windows ARM build and WP0/WP7 on the Lumia and homelab — see the checklist in `TEST_PLAN.md`.** The plan below is unchanged except for the deviations listed in section 10. This document refines [HOME_ASSISTANT_DESIGN.md](HOME_ASSISTANT_DESIGN.md) and roadmap milestone M3. All Lumia/LAN behaviour below is **unverified** until measured on the device.
 
 ## 1. Goal
 
@@ -218,3 +218,12 @@ A review of WP1–WP4 found ten defects; all are fixed, each with a regression t
 8. Every pre-hello problem, binary frames included, gets an error frame and a close; replying to a peer that is already gone no longer raises out of the handler.
 9. Both validators share the rules JSON Schema cannot express (strict RFC 8259 syntax, no duplicate names, integers written as integers, `v` must be the integer 1), pinned by the new `runtime_only/` and `malformed/` fixture folders.
 10. Truncated text is trimmed again so it never ends in whitespace.
+
+## 11. WP5–WP6 implementation notes
+
+- **Split for testability.** Protocol behaviour is in WinRT-free classes covered by the host suite: `HaLinkSession` (hello, throttled snapshots, serialized commands with ack-then-state, error replies, idle tracking for background wakes), `HaCommandDispatcher` (4 s budget, `busy`/`failed` acks) and `HaLinkPolicy` (close-code classification, backoff 1 s -> 5 min with jitter, address and secret validation). `HomeAssistantLinkService` only owns the `MessageWebSocket`, the `ControlChannelTrigger`, timers and reconnection.
+- **WP0 folded in.** Instead of a throwaway spike, the link requests its own hardware slot (`LibreSpotUWP.HaLink.*` tasks) and records the result in the Settings status line and the `ha-link-standby-slot` telemetry. Without a slot the link still works while the app runs.
+- **Commands** use the same `IMediaService` calls as the lock-screen controls; no new playback path.
+- **Settings**: one shared `HomeAssistantSettingsController` drives the section on all three variants. The secret is write-only (credential vault, never re-displayed); "Save and connect" turns the switch on. Addresses are normalized (`http://host:8123` -> `ws://host:8123/api/lumia_hifi/v1/link`).
+- **Off by default.** With the switch off the app opens no socket and registers no task; at startup it only removes stale `LibreSpotUWP.HaLink.*` registrations.
+- **Compile evidence off Windows**: `tests/WinRtTypeCheck` type-checks the WinRT-facing sources against SDK 10.0.19041 metadata with C# 7.3. XAML compilation and .NET Native are only exercised by the Windows build.

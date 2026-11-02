@@ -185,6 +185,44 @@
                     <TextBlock
                         Margin="0,0,0,8"
                         Style="{StaticResource SubtitleTextBlockStyle}"
+                        Text="Home Assistant" />
+
+                    <ToggleSwitch
+                        x:Name="HomeAssistantLinkToggle"
+                        Header="Connect to Home Assistant" />
+                    <TextBlock
+                        Margin="0,6,0,0"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="Lets Home Assistant show and control playback on this device. Off by default. Add the Lumia HiFi integration in Home Assistant first: it shows the address and the secret to enter here."
+                        TextWrapping="WrapWholeWords" />
+                    <TextBox
+                        x:Name="HomeAssistantUrlTextBox"
+                        Margin="0,12,0,0"
+                        Header="Address"
+                        InputScope="Url"
+                        IsSpellCheckEnabled="False"
+                        PlaceholderText="ws://homeassistant.local:8123/api/lumia_hifi/v1/link" />
+                    <PasswordBox
+                        x:Name="HomeAssistantSecretBox"
+                        Margin="0,12,0,0"
+                        Header="Secret" />
+                    <Button
+                        x:Name="HomeAssistantSaveButton"
+                        Margin="0,12,0,0"
+                        Content="Save and connect" />
+                    <TextBlock
+                        x:Name="HomeAssistantStatusText"
+                        Margin="0,6,0,0"
+                        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        TextWrapping="WrapWholeWords" />
+                </StackPanel>
+
+                <StackPanel Style="{StaticResource GroupPanelStyle}">
+                    <TextBlock
+                        Margin="0,0,0,8"
+                        Style="{StaticResource SubtitleTextBlockStyle}"
                         Text="Playback" />
 
                     <ToggleSwitch

@@ -34,7 +34,7 @@ Both runtime validators enforce rules the schemas cannot express:
 | Direction | `type` | Schema | Purpose |
 |---|---|---|---|
 | Lumia -> HA | `hello` | `schema/hello.schema.json` | identity and the list of supported commands |
-| Lumia -> HA | `state` | `schema/state.schema.json` | **full** snapshot; sent after `hello`, after every command, and on change (throttled to >= 250 ms) |
+| Lumia -> HA | `state` | `schema/state.schema.json` | **full** snapshot; always sent after `hello` and after every command; otherwise on change, throttled to >= 250 ms. A change of position alone is not sent while it stays within 2 s of what Home Assistant extrapolates (playing: last position + elapsed time; otherwise unchanged) |
 | Lumia -> HA | `ack` | `schema/ack.schema.json` | result of one command; HA times out after 5 s |
 | HA -> Lumia | `command` | `schema/command.schema.json` | `play`, `pause`, `next`, `previous`, `seek`, `volume_set`, `shuffle_set`, `repeat_set` |
 | either | `error` | `schema/error.schema.json` | protocol-level problem |

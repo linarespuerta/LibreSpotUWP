@@ -43,6 +43,7 @@ Todo lo siguiente se ejecuta en Fedora y no toca el Home Assistant del homelab. 
 | Qué | Comando (desde `LibreSpotUWP/`) |
 |---|---|
 | Núcleo del contrato en C# (mapper, parser, throttle, junto con el resto del harness) | `dotnet run --project tests/LibreSpotUWP.Playback.Tests` |
+| Comprobación de tipos WinRT del enlace (C# 7.3 contra los metadatos del SDK 10.0.19041; no compila XAML ni .NET Native) | `dotnet build tests/WinRtTypeCheck` |
 | Integración `lumia_hifi`: contrato, config flow, endpoint, entidad, secretos | `cd integrations/home_assistant && uv run pytest` |
 | Lint y tipos de la integración | `cd integrations/home_assistant && uv run ruff check . && uv run mypy` |
 | Prueba de humo: Home Assistant desechable en podman + simulador del Lumia | `integrations/home_assistant/dev/smoke.sh` |

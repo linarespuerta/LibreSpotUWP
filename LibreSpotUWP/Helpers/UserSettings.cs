@@ -22,6 +22,9 @@ namespace LibreSpotUWP.Helpers
         private const string AudioBackendKey = "AudioBackend";
         private const string SpotifyConnectDeviceIdKey = "SpotifyConnectDeviceId";
         private const string SpotifyLocalDiscoveryEnabledKey = "SpotifyLocalDiscoveryEnabled";
+        private const string HomeAssistantLinkEnabledKey = "HomeAssistantLinkEnabled";
+        private const string HomeAssistantLinkUrlKey = "HomeAssistantLinkUrl";
+        private const string HomeAssistantDeviceIdKey = "HomeAssistantDeviceId";
         private const string SpotifyCustomClientIdKey = "SpotifyCustomClientId";
         private const string HideAudioKeyCompatibilityWarningKey = "HideAudioKeyCompatibilityWarning";
         private const string EqualizerBandsKey = "AudioEffectsEqualizerBands";
@@ -182,6 +185,34 @@ namespace LibreSpotUWP.Helpers
         {
             get => GetBoolSetting(SpotifyLocalDiscoveryEnabledKey, defaultValue: false);
             set => ApplicationData.Current.LocalSettings.Values[SpotifyLocalDiscoveryEnabledKey] = value;
+        }
+
+        // Off by default: with the link disabled the app opens no socket and registers no task for it.
+        public static bool HomeAssistantLinkEnabled
+        {
+            get => GetBoolSetting(HomeAssistantLinkEnabledKey, defaultValue: false);
+            set => ApplicationData.Current.LocalSettings.Values[HomeAssistantLinkEnabledKey] = value;
+        }
+
+        // The link address only; the secret lives in the credential vault (HomeAssistantLinkService.SecretKey).
+        public static string HomeAssistantLinkUrl
+        {
+            get => ApplicationData.Current.LocalSettings.Values.TryGetValue(HomeAssistantLinkUrlKey, out object value) ? value as string ?? string.Empty : string.Empty;
+            set => ApplicationData.Current.LocalSettings.Values[HomeAssistantLinkUrlKey] = value?.Trim() ?? string.Empty;
+        }
+
+        // Random per-install identifier sent in the Home Assistant hello. Never derived from a Spotify account.
+        public static string HomeAssistantDeviceId
+        {
+            get
+            {
+                var values = ApplicationData.Current.LocalSettings.Values;
+                if (values.TryGetValue(HomeAssistantDeviceIdKey, out object value) && value is string existing && Guid.TryParse(existing, out _))
+                    return existing.ToLowerInvariant();
+                var created = Guid.NewGuid().ToString("D");
+                values[HomeAssistantDeviceIdKey] = created;
+                return created;
+            }
         }
 
         public static string SpotifyCustomClientId

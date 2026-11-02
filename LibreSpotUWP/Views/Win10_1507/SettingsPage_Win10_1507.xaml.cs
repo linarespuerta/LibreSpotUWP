@@ -27,6 +27,7 @@ namespace LibreSpotUWP.Views.Win10_1507
         private EventHandler<AuthState> _authStateChangedHandler;
 
         protected bool _loading = true;
+        private HomeAssistantSettingsController _homeAssistant;
         protected bool _suppressAppearanceChange;
         private bool _suppressAudioBackendChange;
 
@@ -35,11 +36,15 @@ namespace LibreSpotUWP.Views.Win10_1507
             InitializeComponent();
             _equalizerApplyDebounceTimer.Tick += EqualizerApplyDebounceTimer_Tick;
             Loaded += SettingsPage_Loaded;
+            Unloaded += (sender, args) => _homeAssistant?.Unload();
         }
 
         private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
         {
             _media = App.Media;
+            if (_homeAssistant == null)
+                _homeAssistant = new HomeAssistantSettingsController(HomeAssistantLinkToggle, HomeAssistantUrlTextBox, HomeAssistantSecretBox, HomeAssistantSaveButton, HomeAssistantStatusText);
+            _homeAssistant.Load();
             _auth = App.SpotifyAuth;
             SpotifyCustomClientIdTextBox.Text = UserSettings.SpotifyCustomClientId;
             SyncAppearanceRadioSelection();

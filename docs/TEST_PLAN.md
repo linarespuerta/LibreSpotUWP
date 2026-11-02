@@ -247,3 +247,39 @@ This package is a baseline deployment artifact; it does not yet claim cross-acco
 - Portable playback suite passed. ARM Release/.NET Native package generation passed. MakeAppx extraction confirmed name, version, ARM architecture and all sampled artwork files; packaged native DLL hash matches the source DLL. The 49-URI XAML/PRI package audit passed.
 - APPX: `LibreSpotUWP/AppPackages/LibreSpotUWP_1.0.34.0_ARM_Test/LibreSpotUWP_1.0.34.0_ARM.appx` (12,367,009 bytes); SHA-256 `4753E68DB172A0AB7D1A155F5FDB4CC8EFBF3F5FDDC461DDB84E288E007297BE`.
 - Signed by the existing development certificate (thumbprint `D12D4AD769E2DE1F8F0C82E58DD6533165658455`); public certificate is beside the APPX. SignTool reports the self-signed root as untrusted by this PC's policy, as with earlier development packages. This is a development sideload package, not a production-trusted signature. No Lumia installation or physical visual inspection has been done.
+## 2026-11-02 — Home Assistant link candidate (1.0.35.0, WP5–WP7)
+
+Built on Fedora only. Passed off-device: the portable host suite (139 checks, including the link session, retry policy, settings validation and a static audit of the WinRT wiring), the WinRT type check (`dotnet build tests/WinRtTypeCheck`, C# 7.3 against SDK 10.0.19041 metadata), 130 integration tests and the podman smoke test. **Not yet run:** the ARM Release/.NET Native build, XAML compilation, signing, and anything on the Lumia or the homelab. Nothing below is verified until recorded here with evidence.
+
+### Build gate (Windows workstation)
+
+1. `msbuild .\LibreSpotUWP.sln /restore /t:Build /p:Configuration=Release /p:Platform=ARM` from `feature/ha-link`, then `tools/Test-GeneratedXamlUris.ps1` against `obj/ARM/Release` and the APPX (the three Settings variants changed).
+2. Record the APPX SHA-256, size, identity, publisher and architecture as for earlier packages. Keep the 1.0.34.0 APPX as the rollback package before installing.
+3. Regression first, with the Home Assistant switch **off** (default): baseline playback, Connect transfer, lock/unlock. Confirm the log has no `Home Assistant link` lines other than task cleanup.
+
+### Home Assistant install (homelab — requires the owner's explicit approval)
+
+1. Check the homelab Home Assistant version (the integration is tested on 2026.10.4).
+2. Copy `integrations/home_assistant/custom_components/lumia_hifi` to the HA config `custom_components/`, restart, add "Lumia HiFi". Note the address shown; if it is not reachable from the phone (container address), use the homelab LAN address with port 8123 instead.
+3. Rollback: delete the config entry, remove the directory, restart.
+
+### WP0 + WP7 matrix (Lumia + homelab)
+
+| Case | Steps | Pass criterion |
+|---|---|---|
+| WP0 standby slot | Enable the link; read the Settings status line and the `ha-link-standby-slot` telemetry | Records `hardware slot`, `software slot` or the failure. Hardware slot: continue with the locked cases. Otherwise the locked-idle row is a documented unmet requirement. |
+| Pairing | Enter address + secret, Save and connect | Status "Connected."; HA entity available within 5 s |
+| Wrong secret | Enter a wrong secret | Status "rejected the secret"; no retry storm in the log; HA logs one failed attempt |
+| Foreground playback | Play from a controller | Entity title/artist/album/artwork correct within 1 s of each track change |
+| Each command from HA | play, pause, next, previous, seek, volume, shuffle, repeat | Effect within 1 s (unlocked); controller phone reflects it; one ack per command |
+| Guest account session | Second account transfers to the Lumia | Entity follows; no account name or id visible in HA state or diagnostics |
+| Locked, playing, 30 min | Lock the Lumia during playback | State keeps updating; commands work |
+| Locked, idle 15/60 min | Pause, lock, wait, send play from HA | Command wakes the link (`ha-link-background-wake`) or documented unmet per WP0 |
+| Wi-Fi drop/return | Toggle Wi-Fi on the phone | Entity unavailable while down; reconnects without user action after return |
+| HA restart | Restart Home Assistant | Link returns within the backoff (≤ 5 min, usually seconds) |
+| Phone/app restart | Restart the app, then the phone | Link returns after launch; switch state persisted |
+| Secret rotation | Rotate in HA options | Phone shows "rejected the secret" and stops; works after entering the new one |
+| Switch off | Turn the Settings switch off | Socket closed, HA entity unavailable, no `LibreSpotUWP.HaLink.*` background tasks remain |
+| Battery | 2 h idle with link on vs off | Drain difference recorded |
+
+Known risk to check first: Windows 10 Mobile must accept `MessageWebSocket.SetRequestHeader("Authorization", ...)`. If the connect fails with an argument/header HRESULT, record it; the fallback is a contract change, not a workaround in the app.
