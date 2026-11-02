@@ -260,6 +260,13 @@
     <Compile Include="Services\WinRtDealerTransport.cs" />
     <Compile Include="Services\ControlWorkTracker.cs" />
     <Compile Include="Services\DealerChannelPolicy.cs" />
+    <Compile Include="Services\HomeAssistant\HaCommandParser.cs" />
+    <Compile Include="Services\HomeAssistant\HaContract.cs" />
+    <Compile Include="Services\HomeAssistant\HaFrames.cs" />
+    <Compile Include="Services\HomeAssistant\HaStateInputFactory.cs" />
+    <Compile Include="Services\HomeAssistant\HaStateMapper.cs" />
+    <Compile Include="Services\HomeAssistant\HaStrictJson.cs" />
+    <Compile Include="Services\HomeAssistant\HaStateThrottle.cs" />
     <Compile Include="Services\PcmDeliveryDiagnostics.cs" />
     <Compile Include="Services\BackendStartupTrace.cs" />
     <Compile Include="Services\PlatformAudioOutputPolicy.cs" />

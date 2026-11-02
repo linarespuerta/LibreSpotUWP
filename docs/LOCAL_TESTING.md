@@ -35,3 +35,19 @@ La ausencia del PFX solo bloquea el empaquetado/instalación firmado. No bloquea
 ## Relación con los objetivos de `prompt.md`
 
 Esto mantiene el plan original: primero reproducibilidad y ABI (Phase 2), después discovery y reproducción verificadas en el Lumia (Phase 3), y solo luego UI/ Home Assistant/fiabilidad. No se sustituye la validación física por una afirmación de emulación; se adelanta todo lo que el PC puede demostrar sin arriesgar la instalación funcional del teléfono.
+
+## Pruebas de Home Assistant (sin dispositivo)
+
+Todo lo siguiente se ejecuta en Fedora y no toca el Home Assistant del homelab. Requiere `uv`, `dotnet` 8 y `podman-compose`.
+
+| Qué | Comando (desde `LibreSpotUWP/`) |
+|---|---|
+| Núcleo del contrato en C# (mapper, parser, throttle, junto con el resto del harness) | `dotnet run --project tests/LibreSpotUWP.Playback.Tests` |
+| Integración `lumia_hifi`: contrato, config flow, endpoint, entidad, secretos | `cd integrations/home_assistant && uv run pytest` |
+| Lint y tipos de la integración | `cd integrations/home_assistant && uv run ruff check . && uv run mypy` |
+| Prueba de humo: Home Assistant desechable en podman + simulador del Lumia | `integrations/home_assistant/dev/smoke.sh` |
+| Simulador a mano contra un Home Assistant de desarrollo | `LUMIA_SIM_SECRET=<secreto> uv run python tools/lumia_sim.py --url ws://localhost:8123/api/lumia_hifi/v1/link` |
+
+Los fixtures de `contracts/lumia_hifi/v1/fixtures/` son compartidos: Python los valida contra los JSON Schema y contra el validador de la integración, y C# los usa como salida de referencia del mapper y como entrada del parser. Si cambias el contrato, cambia primero el esquema y los fixtures; los tres lados deben seguir en verde.
+
+`smoke.sh` descarga la imagen `ghcr.io/home-assistant/home-assistant` (fijada a una versión), la publica solo en `127.0.0.1:18123` y borra el contenedor al terminar (`KEEP=1` lo conserva). Para el Lumia real queda pendiente WP7 (`HOME_ASSISTANT_CODE_ROUND.md`); estas pruebas no sustituyen la validación en el teléfono.

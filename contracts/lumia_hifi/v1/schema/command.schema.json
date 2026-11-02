@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lumia_hifi/v1/command",
+  "title": "HA -> Lumia: one playback command",
+  "type": "object",
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["v", "type", "id", "name"],
+      "properties": {
+        "v": { "const": 1 },
+        "type": { "const": "command" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/base", "unevaluatedProperties": false,
+      "properties": { "name": { "enum": ["play", "pause", "next", "previous"] } }
+    },
+    {
+      "$ref": "#/$defs/base", "required": ["position_ms"], "unevaluatedProperties": false,
+      "properties": { "name": { "const": "seek" }, "position_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 } }
+    },
+    {
+      "$ref": "#/$defs/base", "required": ["volume"], "unevaluatedProperties": false,
+      "properties": { "name": { "const": "volume_set" }, "volume": { "type": "number", "minimum": 0, "maximum": 1 } }
+    },
+    {
+      "$ref": "#/$defs/base", "required": ["shuffle"], "unevaluatedProperties": false,
+      "properties": { "name": { "const": "shuffle_set" }, "shuffle": { "type": "boolean" } }
+    },
+    {
+      "$ref": "#/$defs/base", "required": ["repeat"], "unevaluatedProperties": false,
+      "properties": { "name": { "const": "repeat_set" }, "repeat": { "enum": ["off", "all", "one"] } }
+    }
+  ]
+}

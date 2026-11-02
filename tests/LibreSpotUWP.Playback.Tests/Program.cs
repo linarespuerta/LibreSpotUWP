@@ -112,6 +112,7 @@ internal static class Program
             BackgroundQueueHydrationPreservesCurrentTrack
         };
 
+        tests = tests.Concat(HomeAssistantContractTests.All).ToArray();
         try
         {
             foreach (var test in tests)

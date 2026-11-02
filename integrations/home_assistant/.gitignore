@@ -1,0 +1,8 @@
+
+# Throwaway Home Assistant state
+dev/state/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

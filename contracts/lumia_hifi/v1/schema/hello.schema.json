@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lumia_hifi/v1/hello",
+  "title": "Lumia -> HA: first frame of every connection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "type", "device_id", "device_name", "app_version", "commands"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "hello" },
+    "device_id": {
+      "description": "Random per-install GUID. Never a Spotify identifier.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "device_name": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "app_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "commands": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["play", "pause", "next", "previous", "seek", "volume_set", "shuffle_set", "repeat_set"]
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+[project]
+name = "lumia-hifi-ha"
+version = "0.1.0"
+description = "Home Assistant integration for the Lumia HiFi Spotify Connect receiver"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest-homeassistant-custom-component",
+    "jsonschema>=4.23",
+    "ruff",
+    "mypy",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+plugins = []
+implicit_reexport = true
+files = ["custom_components/lumia_hifi", "tools"]
+ignore_missing_imports = true

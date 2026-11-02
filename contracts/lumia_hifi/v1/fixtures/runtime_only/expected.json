@@ -1,0 +1,6 @@
+{
+  "command__exponent_position.json": "invalid_frame",
+  "command__float_position.json": "invalid_frame",
+  "command__float_version.json": "unsupported_version",
+  "state__float_seq.json": "invalid_frame"
+}

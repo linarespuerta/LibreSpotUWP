@@ -35,6 +35,7 @@ Goal 5 is reopened after a new 1.0.15.0 report: locking the controller phone los
 ## M3 — Home Assistant contract
 
 - Objective: a local, secure media-player integration design validated without deployment.
+- Plan: [HOME_ASSISTANT_CODE_ROUND.md](HOME_ASSISTANT_CODE_ROUND.md) (work packages and definitions of done).
 - Technical changes: define redacted status/control API and companion prototype if direct UWP hosting is unreliable.
 - Dependencies: M1 state/event diagnostics.
 - Risks: LAN reachability, authentication, stale state.

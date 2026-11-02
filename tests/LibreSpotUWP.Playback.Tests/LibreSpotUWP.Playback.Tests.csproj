@@ -25,5 +25,19 @@
     <Compile Include="..\..\LibreSpotUWP\Services\PlaybackAccountIdentityValidator.cs" Link="PlaybackAccountIdentityValidator.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\ApplicationPlaybackQueue.cs" Link="ApplicationPlaybackQueue.cs" />
     <Compile Include="..\..\LibreSpotUWP\Services\ResponsivenessPrimitives.cs" Link="ResponsivenessPrimitives.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaCommandParser.cs" Link="HomeAssistant\HaCommandParser.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaContract.cs" Link="HomeAssistant\HaContract.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaFrames.cs" Link="HomeAssistant\HaFrames.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaStateInputFactory.cs" Link="HomeAssistant\HaStateInputFactory.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaStateMapper.cs" Link="HomeAssistant\HaStateMapper.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaStrictJson.cs" Link="HomeAssistant\HaStrictJson.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Services\HomeAssistant\HaStateThrottle.cs" Link="HomeAssistant\HaStateThrottle.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Models\MediaState.cs" Link="Models\MediaState.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Models\LibrespotTrackInfo.cs" Link="Models\LibrespotTrackInfo.cs" />
+    <Compile Include="..\..\LibreSpotUWP\Models\LibrespotPlaybackState.cs" Link="Models\LibrespotPlaybackState.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="SpotifyAPI.Web" Version="7.2.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 </Project>

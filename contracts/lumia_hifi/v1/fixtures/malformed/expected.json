@@ -1,0 +1,17 @@
+{
+  "bad_escape.txt": "invalid_frame",
+  "comment.txt": "invalid_frame",
+  "duplicate_name.txt": "invalid_frame",
+  "hex_number.txt": "invalid_frame",
+  "infinity_literal.txt": "invalid_frame",
+  "leading_zero.txt": "invalid_frame",
+  "line_comment.txt": "invalid_frame",
+  "nan_literal.txt": "invalid_frame",
+  "plus_sign.txt": "invalid_frame",
+  "raw_control_character.txt": "invalid_frame",
+  "single_quotes.txt": "invalid_frame",
+  "trailing_comma.txt": "invalid_frame",
+  "trailing_content.txt": "invalid_frame",
+  "unquoted_name.txt": "invalid_frame",
+  "unterminated.txt": "invalid_frame"
+}

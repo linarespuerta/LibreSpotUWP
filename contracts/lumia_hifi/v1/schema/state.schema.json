@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lumia_hifi/v1/state",
+  "title": "Lumia -> HA: full redacted playback snapshot (never a delta)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v", "type", "seq", "state", "title", "artist", "album", "artwork_url", "content_id",
+    "duration_ms", "position_ms", "volume", "shuffle", "repeat", "session", "output"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "state" },
+    "seq": { "description": "Monotonic per connection.", "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "state": { "enum": ["playing", "paused", "buffering", "idle"] },
+    "title": { "type": ["string", "null"], "maxLength": 256 },
+    "artist": { "type": ["string", "null"], "maxLength": 256 },
+    "album": { "type": ["string", "null"], "maxLength": 256 },
+    "artwork_url": { "type": ["string", "null"], "maxLength": 512, "pattern": "^https://[^\\s]+$" },
+    "content_id": {
+      "type": ["string", "null"],
+      "pattern": "^spotify:(track|episode):[A-Za-z0-9]{22}$"
+    },
+    "duration_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+    "position_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+    "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+    "shuffle": { "type": "boolean" },
+    "repeat": { "enum": ["off", "all", "one"] },
+    "session": { "enum": ["connected", "offline", "recovering"] },
+    "output": { "enum": ["local", "remote"] }
+  }
+}

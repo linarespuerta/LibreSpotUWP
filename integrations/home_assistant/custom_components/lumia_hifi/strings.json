@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Lumia HiFi receiver",
+        "description": "Pick the name Home Assistant should show. A new secret is generated for this receiver on the next screen.",
+        "data": { "name": "Name" }
+      },
+      "secret": {
+        "title": "Connect the Lumia app",
+        "description": "In the Lumia HiFi app, open Settings, Home Assistant, then enter:\n\n**Address:** `{url}`\n\n**Secret:** `{secret}`\n\nThe secret is shown only once. If you lose it, rotate it from the integration options."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lumia HiFi options",
+        "data": { "rotate_secret": "Generate a new secret (disconnects the phone until it is updated)" }
+      },
+      "secret": {
+        "title": "New secret",
+        "description": "Enter this in the Lumia HiFi app:\n\n**Address:** `{url}`\n\n**Secret:** `{secret}`\n\nThe secret is shown only once."
+      }
+    }
+  }
+}

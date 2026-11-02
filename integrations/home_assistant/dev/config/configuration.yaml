@@ -1,0 +1,13 @@
+# Minimal on purpose: only what the smoke test needs.
+homeassistant:
+  name: Lumia dev
+  unit_system: metric
+  time_zone: UTC
+http:
+api:
+config:
+onboarding:
+logger:
+  default: warning
+  logs:
+    custom_components.lumia_hifi: debug

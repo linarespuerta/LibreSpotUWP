@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lumia_hifi/v1/error",
+  "title": "Either direction: protocol-level problem; the connection stays open",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "type", "code"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "error" },
+    "code": { "enum": ["unknown_type", "invalid_frame", "too_large"] }
+  }
+}

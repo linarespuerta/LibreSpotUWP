@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lumia_hifi/v1/ack",
+  "title": "Lumia -> HA: result of one command",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "type", "id", "ok"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "ack" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "ok": { "type": "boolean" },
+    "error": { "enum": ["unsupported", "invalid", "failed", "busy"] }
+  },
+  "allOf": [
+    { "if": { "properties": { "ok": { "const": true } } }, "then": { "not": { "required": ["error"] } } },
+    { "if": { "properties": { "ok": { "const": false } } }, "then": { "required": ["error"] } }
+  ]
+}

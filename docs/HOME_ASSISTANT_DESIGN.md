@@ -1,6 +1,10 @@
 # Home Assistant integration design
 
-## Recommendation
+## Update 2026-11-02
+
+The companion-service recommendation below is superseded: the Lumia dials a custom Home Assistant integration (`lumia_hifi`) that hosts the endpoint itself. The wire contract is frozen in [`contracts/lumia_hifi/v1/`](../contracts/lumia_hifi/v1/README.md) and the plan is in [HOME_ASSISTANT_CODE_ROUND.md](HOME_ASSISTANT_CODE_ROUND.md).
+
+## Recommendation (historical)
 
 Use a lightweight LAN companion service only after discovery MVP proves what inbound networking Windows 10 Mobile permits. It avoids coupling Home Assistant authentication and update cadence to a legacy UWP app. The Lumia should publish a small redacted state snapshot and accept only local, authenticated commands; the companion maps that contract to a Home Assistant `media_player` entity.
 

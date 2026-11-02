@@ -1,0 +1,14 @@
+# Throwaway Home Assistant for developing the lumia_hifi integration.
+# It listens on loopback only. State lives only in the container and
+# disappears with it (`run.sh reset`). It never touches the homelab Home Assistant.
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.10.4
+    container_name: lumia-hifi-dev-ha
+    ports:
+      - "127.0.0.1:18123:8123"
+    volumes:
+      - ./config/configuration.yaml:/config/configuration.yaml:ro,z
+      - ../custom_components/lumia_hifi:/config/custom_components/lumia_hifi:ro,z
+    environment:
+      TZ: UTC
